@@ -82,5 +82,6 @@ class ReadPacketActor extends Actor {
             seq, tcpFlags, filePosition + packetHeadersLen, payloadLen, packet.size, sackBlocksCount)
         } else sender ! TractorTcpPacket()
       } else sender ! TractorTcpPacket()
+      context.stop(self)
   }
 }

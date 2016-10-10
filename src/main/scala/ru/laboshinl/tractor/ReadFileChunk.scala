@@ -16,9 +16,15 @@ import scala.util.control.Breaks._
  * Created by laboshinl on 10/4/16.
  */
 
+//class LocalAggregator extends Actor {
+//  override def receive: Actor.Receive = {
+//    case File
+//  }
+//}
+
 class ReadFileChunk extends Actor {
 
-  val packetReader = context.actorOf(RandomPool(100).props(Props[ReadPacketActor]), "packetReader")
+  //val packetReader = context.actorOf(RandomPool(100).props(Props[ReadPacketActor]), "packetReader")
 
   implicit val timeout = Timeout(1000 seconds)
 
@@ -68,7 +74,7 @@ class ReadFileChunk extends Actor {
       chunk.skipBytes(12)
       val packetLen = chunk.readInt()
       chunk.seek(currentPosition)
-      listOfFutures += akka.pattern.ask(packetReader, ReadPacket(ByteString.fromArray(chunk.readByte(packetLen + PcapHeaderLen)), currentPosition + PcapHeaderLen)).mapTo[TractorTcpPacket]
+      listOfFutures += akka.pattern.ask(context.actorOf(Props[ReadPacketActor]), ReadPacket(ByteString.fromArray(chunk.readByte(packetLen + PcapHeaderLen)), currentPosition + PcapHeaderLen)).mapTo[TractorTcpPacket]
     }
     Future.sequence(listOfFutures)
   }

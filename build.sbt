@@ -17,6 +17,7 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-cluster-tools" % akkaVersion,
   "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,
   "com.typesafe.akka" %% "akka-agent" % akkaVersion,
+  "com.typesafe.akka" %% "akka-contrib" % akkaVersion,
   "ch.qos.logback" % "logback-classic" % "1.0.9",
   "com.github.romix.akka" %% "akka-kryo-serialization" % "0.4.1",
   "org.apache.commons" % "commons-math3" % "3.6.1",
