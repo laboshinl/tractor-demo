@@ -111,7 +111,7 @@ class ReadFileChunk extends Actor {
 
   override def receive: Receive = {
     case FileChunk(file, start, stop) =>
-      readFileChunk3(file, start, stop)
+      readFileChunk(file, start, stop)
     //      val t0 = System.currentTimeMillis()
     //      val result = Await.result(readFileChunk(file, start, stop), 1000 seconds)
     //      println("reader await took", System.currentTimeMillis() - t0, result.size)

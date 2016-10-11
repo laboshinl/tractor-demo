@@ -65,11 +65,15 @@ object ApplicationMain extends App {
   System.setProperty("akka.remote.netty.tcp.hostname", InetAddress.getLocalHost.getHostAddress)
 
   val system = ActorSystem("ClusterSystem", ConfigFactory.load())
-  val reader = system.actorOf(
-    ClusterRouterPool(BalancingPool(0), ClusterRouterPoolSettings(
-      totalInstances = 1000, maxInstancesPerNode = nWorkers,
-      allowLocalRoutees = true, useRole = None)).props(Props[ReadFileChunk]))
+//  val reader = system.actorOf(
+//    ClusterRouterPool(BalancingPool(0), ClusterRouterPoolSettings(
+//      totalInstances = 1000, maxInstancesPerNode = 1,
+//      allowLocalRoutees = true, useRole = None)).props(Props[ReadFileChunk]))
 
+    val reader = system.actorOf(
+      ClusterRouterPool(BalancingPool(0), ClusterRouterPoolSettings(
+        totalInstances = 1000, maxInstancesPerNode = 1,
+        allowLocalRoutees = true, useRole = None)).props(Props[LocalWorker]))
 
 //  ///***********************************************
 //  var config = ConfigFactory.parseString("akka.remote.netty.tcp { port = 2553, bind-port = 2553}").withFallback(ConfigFactory.load())
@@ -77,21 +81,43 @@ object ApplicationMain extends App {
 //  //*************************************************
 
   val routees = Await.result(akka.pattern.ask(reader, GetRoutees).mapTo[Routees], 100 second)
-  println(routees.getRoutees.size())
+  val nodesCount = routees.getRoutees.size()
 
   scala.io.StdIn.readLine()
   println("Start processing file %s".format(filename))
 
   10.to(64).foreach { (size : Int) =>
     val t0 = System.currentTimeMillis()
-    val splits = splitFile(file, size * chunkSize)
+    //val splits = splitFile(file, size * chunkSize)
+    val splits = splitFile(file, nodesCount)
     val aggregator = system.actorOf(Props[GlobalAggregator])
     splits.foreach((s: (Long, Long)) => reader tell(FileChunk(file, s._1, s._2), aggregator))
-    Try(Await.result(akka.pattern.ask(aggregator, splits.size).mapTo[BidirectionalFlows], 100 second))
-    println("%s Mb with block %s Mb in %s".format(file.length()/1024/1024, size * chunkSize/1024/1024, System.currentTimeMillis() - t0))
+    try{
+      val res = Await.result(akka.pattern.ask(aggregator, splits.size).mapTo[BidirectionalFlows], 100 second)
+      println(res.flows.size)
+    }
+    catch {
+      case e: Exception =>
+        println(e)
+
+    }
+    //println("%s Mb with block %s Mb in %s".format(file.length()/1024/1024, size * chunkSize/1024/1024, System.currentTimeMillis() - t0))
+    println("throughput = %s Mbit/s".format(file.length()*8/1024/1024/((System.currentTimeMillis() - t0)/1000)))
     //Await.result(akka.pattern.gracefulStop(reader, 20 seconds, Broadcast(PoisonPill)), 20 seconds)
 
     //    scala.io.StdIn.readLine()
+  }
+
+  private def splitFile(file: File, nWorkers : Int): ListBuffer[(Long,Long)] = {
+   // println(file.length())
+    val size : Long = math.ceil(file.length.toDouble / nWorkers).toInt
+    var splits = new ListBuffer[(Long, Long)]()
+    for (i <- 0L to nWorkers - 1) {
+      val start: Long = size * i
+      val stop: Long = if (i.equals(nWorkers - 1)) file.length() else size * (i + 1) - 1
+      splits += Tuple2(start, stop)
+    }
+    splits
   }
 
   private def splitFile(file: File, chunkSize: Long): ListBuffer[(Long, Long)] = {
