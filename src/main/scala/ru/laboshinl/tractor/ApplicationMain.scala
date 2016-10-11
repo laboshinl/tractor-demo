@@ -2,17 +2,19 @@ package ru.laboshinl.tractor
 
 import java.io.File
 import java.net.InetAddress
+import java.nio.file.{Path, Paths, Files}
+import java.util.concurrent.Future
 
 import akka.actor._
 import akka.cluster.routing.{ClusterRouterPool, ClusterRouterPoolSettings}
-import akka.routing.RandomPool
+import akka.routing._
 import akka.util.{ByteString, Timeout}
 import com.typesafe.config.ConfigFactory
 
 import scala.collection.mutable.ListBuffer
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.{Await, Future}
+import scala.concurrent.Await
 import scala.concurrent.duration._
+import scala.util.Try
 
 object ApplicationMain extends App {
   val usage =
@@ -52,7 +54,7 @@ object ApplicationMain extends App {
   val nWorkers = options.get('nWorkers).map(_.asInstanceOf[Int]).getOrElse(8)
   val filename = options.get('inFile).map(_.asInstanceOf[String]).getOrElse("")
   val seedNode = "akka.tcp://ClusterSystem@%s:2551".format(options.get('seedNode).map(_.asInstanceOf[String]).getOrElse(InetAddress.getLocalHost.getHostAddress))
-  val chunkSize = options.get('chunkSize).map(_.asInstanceOf[Int]).getOrElse(30) * 1024 * 1024
+  val chunkSize = options.get('chunkSize).map(_.asInstanceOf[Int]).getOrElse(1) * 1024 * 1024
 
   implicit val timeout = Timeout(1000 seconds)
 
@@ -63,49 +65,34 @@ object ApplicationMain extends App {
   System.setProperty("akka.remote.netty.tcp.hostname", InetAddress.getLocalHost.getHostAddress)
 
   val system = ActorSystem("ClusterSystem", ConfigFactory.load())
+  val reader = system.actorOf(
+    ClusterRouterPool(BalancingPool(0), ClusterRouterPoolSettings(
+      totalInstances = 1000, maxInstancesPerNode = nWorkers,
+      allowLocalRoutees = true, useRole = None)).props(Props[ReadFileChunk]))
+
+
+//  ///***********************************************
+//  var config = ConfigFactory.parseString("akka.remote.netty.tcp { port = 2553, bind-port = 2553}").withFallback(ConfigFactory.load())
+//  val system2 = ActorSystem("ClusterSystem", config)
+//  //*************************************************
+
+  val routees = Await.result(akka.pattern.ask(reader, GetRoutees).mapTo[Routees], 100 second)
+  println(routees.getRoutees.size())
 
   scala.io.StdIn.readLine()
   println("Start processing file %s".format(filename))
 
-  val reader = system.actorOf(
-    ClusterRouterPool(RandomPool(0), ClusterRouterPoolSettings(
-      totalInstances = 1000, maxInstancesPerNode = nWorkers,
-      allowLocalRoutees = true, useRole = None)).props(Props[ReadFileChunk]),
-    name = "reader")
+  10.to(64).foreach { (size : Int) =>
+    val t0 = System.currentTimeMillis()
+    val splits = splitFile(file, size * chunkSize)
+    val aggregator = system.actorOf(Props[GlobalAggregator])
+    splits.foreach((s: (Long, Long)) => reader tell(FileChunk(file, s._1, s._2), aggregator))
+    Try(Await.result(akka.pattern.ask(aggregator, splits.size).mapTo[BidirectionalFlows], 100 second))
+    println("%s Mb with block %s Mb in %s".format(file.length()/1024/1024, size * chunkSize/1024/1024, System.currentTimeMillis() - t0))
+    //Await.result(akka.pattern.gracefulStop(reader, 20 seconds, Broadcast(PoisonPill)), 20 seconds)
 
-
-  def job(t0 : Long, chunk :Long): Unit = {
-    val splits = splitFile(file, chunk)
-
-    val listOfFutures = ListBuffer[Future[Map[Long,BidirectionalTcpFlow]]]()
-    splits.foreach((s: (Long, Long)) => listOfFutures += akka.pattern.ask(reader, FileChunk(file, s._1, s._2)).mapTo[Map[Long, BidirectionalTcpFlow]])
-
-    //val aggregator = scala.collection.mutable.Map[Long, BidirectionalTcpFlow]().withDefaultValue(BidirectionalTcpFlow())
-
-    val t1 = System.currentTimeMillis()
-    val result = Await.result(Future.sequence(listOfFutures), 1000 seconds)
-    println(chunk / 1024 / 1024, "takes to await", System.currentTimeMillis() - t1)
-//    val t2 = System.currentTimeMillis()
-//            result.foreach((f: Map[Long, BidirectionalTcpFlow]) => {
-//              f.foreach((x: (Long, BidirectionalTcpFlow)) => aggregator(x._1) ++= x._2)
-//            })
-//    println("takes to merge", System.currentTimeMillis() - t2)
-//    println("total flows %s".format(aggregator.size))
-//    println("total time", System.currentTimeMillis() - t0)
-
-//    result onSuccess {
-//      case res =>
-//        res.foreach((f: Map[Long, BidirectionalTcpFlow]) => {
-//          f.foreach((x: (Long, BidirectionalTcpFlow)) => aggregator(x._1) ++= x._2)
-//        })
-//        println("total flows %s".format(aggregator.size))
-//        println(System.currentTimeMillis() - t0)
-//    }
-    //aggregator.clear()
+    //    scala.io.StdIn.readLine()
   }
-
-  1.to(100).foreach((i : Int) => job(System.currentTimeMillis(), chunkSize + i * 1024 * 1024))
-
 
   private def splitFile(file: File, chunkSize: Long): ListBuffer[(Long, Long)] = {
     val chunksCount: Long = math.ceil(file.length.toDouble / chunkSize).toInt

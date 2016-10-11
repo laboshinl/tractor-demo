@@ -22,5 +22,6 @@ libraryDependencies ++= Seq(
   "com.github.romix.akka" %% "akka-kryo-serialization" % "0.4.1",
   "org.apache.commons" % "commons-math3" % "3.6.1",
   "org.scalaz" %% "scalaz-core" % "7.2.6",
+  "com.github.romix.akka" %% "akka-kryo-serialization" % "0.4.1",
   "org.spire-math" % "spire_2.11" % "0.12.0"
   )

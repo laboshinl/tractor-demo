@@ -78,10 +78,11 @@ class ReadPacketActor extends Actor {
           }
           val packetHeadersLen = EthHeaderLen + ipHeaderLen + tcpHeaderLen
           val payloadLen = packet.size - packetHeadersLen
-          sender ! TractorTcpPacket(timestamp, ipSrc, portSrc, ipDst, portDst,
+          val res = TractorTcpPacket(timestamp, ipSrc, portSrc, ipDst, portDst,
             seq, tcpFlags, filePosition + packetHeadersLen, payloadLen, packet.size, sackBlocksCount)
-        } else sender ! TractorTcpPacket()
-      } else sender ! TractorTcpPacket()
+          sender ! HashedFlow(res.computeHash(), TractorTcpFlow() + res)
+        } else sender ! HashedFlow(0L, TractorTcpFlow())
+      } else sender ! HashedFlow(0L, TractorTcpFlow())
       context.stop(self)
   }
 }
