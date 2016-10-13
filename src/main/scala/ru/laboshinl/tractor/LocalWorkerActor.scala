@@ -1,31 +1,25 @@
 package ru.laboshinl.tractor
 
-import java.io.File
-
-import akka.actor.{Props, ActorRef, Actor}
-import akka.actor.Actor.Receive
-import akka.routing.{RoundRobinPool, SmallestMailboxPool, BalancingPool}
-import com.typesafe.config.ConfigFactory
+import akka.actor.{Actor, ActorRef, Props}
+import akka.routing.RoundRobinPool
 
 import scala.collection.mutable.ListBuffer
 
 /**
  * Created by laboshinl on 10/11/16.
  */
-class LocalWorker extends Actor {
+class LocalWorkerActor extends Actor {
   var replyTo = ActorRef.noSender
-//  var blockSize = System.getProperty("tractor.block.size").toInt //ConfigFactory.load().getInt("tractor.block.size")
-//  println(blockSize)
   val cores = Runtime.getRuntime.availableProcessors()
-  val reader = context.actorOf(RoundRobinPool(cores*2).props(Props[ReadFileChunk]), "localreader")
+  val reader = context.actorOf(RoundRobinPool(cores*2).props(Props[ChunkReadActor]), "localreader")
   override def receive: Receive = {
-    case FileChunk2(file, start, stop, size) =>
+    case FileChunkWithBs(file, start, stop, size, nWorkers) =>
       replyTo = sender()
-      val aggregator = context.actorOf(Props[GlobalAggregator])
+      val aggregator = context.actorOf(Props[GlobalAggregateActor])
       val splits = splitFile(start, stop, size * 1024 * 1024)
-      aggregator ! splits.size
+      aggregator ! splits.size * nWorkers
       splits.foreach{
-        (split : (Long, Long)) => reader tell (FileChunk(file, split._1, split._2), aggregator)
+        (split : (Long, Long)) => reader tell (FileChunk(file, split._1, split._2, nWorkers), aggregator)
       }
     case m : BidirectionalFlows =>
       replyTo forward m
@@ -39,7 +33,6 @@ class LocalWorker extends Actor {
       val end: Long = if (i.equals(chunksCount - 1)) stop-start else chunkSize * (i + 1) - 1
       splits += Tuple2(start + begin, start + end)
     }
-    //println(splits)
     splits
   }
 }

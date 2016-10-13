@@ -3,6 +3,7 @@ package ru.laboshinl.tractor
 import java.nio.ByteOrder.{LITTLE_ENDIAN => LE, BIG_ENDIAN => BE}
 
 import akka.actor._
+import akka.routing.Broadcast
 
 /**
  * Created by laboshinl on 10/10/16.
@@ -81,8 +82,9 @@ class ReadPacketActor extends Actor {
           val res = TractorTcpPacket(timestamp, ipSrc, portSrc, ipDst, portDst,
             seq, tcpFlags, filePosition + packetHeadersLen, payloadLen, packet.size, sackBlocksCount)
           sender ! HashedFlow(res.computeHash(), TractorTcpFlow() + res)
-        } else sender ! HashedFlow(0L, TractorTcpFlow())
-      } else sender ! HashedFlow(0L, TractorTcpFlow())
+        } //else sender ! Skipped
+      } //else sender ! Skipped
+      sender ! Broadcast(Skipped)
       context.stop(self)
   }
 }

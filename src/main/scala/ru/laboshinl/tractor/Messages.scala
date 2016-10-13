@@ -1,16 +1,166 @@
 package ru.laboshinl.tractor
 
-import java.io.{ObjectInputStream, File}
+import java.io.File
+import java.nio.ByteBuffer
 
 import akka.util.ByteString
 import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics
 
-import scala.collection.mutable.{ArrayBuffer, ListBuffer}
+import scala.collection.mutable.ListBuffer
 import scala.util.control.Breaks._
+
 /**
- * Created by laboshinl on 10/10/16.
+ * Created by laboshinl on 10/13/16.
  */
-case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), serverFlow: TractorTcpFlow = TractorTcpFlow()) {
+
+case class Skipped() extends Serializable
+
+case class FileChunk(file: File, start: Long, stop: Long, nWorkers : Int) extends Serializable
+
+case class FileChunkWithBs(file: File, start: Long, stop: Long, bs: Int, nWorkers : Int) extends Serializable
+
+case class FileJob(file: File, chunkSize: Long, nWorkers: Int) extends Serializable
+
+case class ReadPacket(packet: ByteString, filePosition: Long) extends Serializable
+
+case class HashedFlow(hash: Long, Flow: TractorTcpFlow) extends Serializable
+
+case class BidirectionalFlows(flows: Map[Long, BidirectionalTcpFlow]) extends Serializable {
+  def getProtocolStatistics(ports: scala.collection.mutable.Map[Int, String]): Seq[(String, Int)] = {
+    flows.groupBy(_._2.getProtoByPort(ports)).mapValues(_.size).toSeq.sortBy(-_._2)
+  }
+
+  def getServerIpStatistics: Seq[(String, Int)] = {
+    flows.groupBy(_._2.getServerIp).mapValues(_.size).toSeq.sortBy(-_._2)
+  }
+
+  def getClientIpStatistics: Seq[(String, Int)] = {
+    flows.groupBy(_._2.getClientIp).mapValues(_.size).toSeq.sortBy(-_._2)
+  }
+  //  println(res.flows.filter(_._2.getProtoByPort(ports) == "http").groupBy((p: (Long, BidirectionalTcpFlow)) => {
+  //    val a = p._2.clientHttpHeadersAsMap(file)
+  //    if (a nonEmpty)
+  //      a.head.getOrElse("Host", "")
+  //    else ""
+  //  }).mapValues(_.size).toSeq.sortBy(-_._2))
+  //  println(res.flows.filter(_._2.getProtoByPort(ports) == "http").groupBy((p: (Long, BidirectionalTcpFlow)) => {
+  //    val a = p._2.serverHttpHeadersAsMap(file)
+  //    if (a nonEmpty)
+  //      a.head.getOrElse("Content-Type", "")
+  //    else ""
+  //  }).mapValues(_.size).toSeq.sortBy(-_._2))
+  //  println(res.flows.groupBy(_._2.getProtoByPort(ports)).mapValues(_.size).toSeq.sortBy(- _._2))  //  Protocol Statistics
+  //  println(res.flows.groupBy(_._2.getClientIp).mapValues(_.size).toSeq.sortBy(- _._2))  // Top Clients
+  //  println(res.flows.groupBy(_._2.getServerIp).mapValues(_.size).toSeq.sortBy(- _._2))  // Top Servers
+}
+
+
+
+case class TractorTcpPacket(timestamp: Double = 0, ipSrc: Array[Byte] = Array(), portSrc: Int = 0, ipDst: Array[Byte] = Array(), portDst: Int = 0, seq: Long = 0,
+                            tcpFlags: Array[Short] = Array(), payloadStart: Long = 0, payloadLen: Int = 0, length: Int = 0, sackBlocksCount: Short = 0) extends Serializable {
+  override def toString: String = {
+    s"$timestamp  $ipSrc:$portSrc -> $ipDst:$portDst  $length  %s".format(tcpFlags.toList)
+  }
+
+  def isServer = {
+    portSrc < portDst
+  }
+
+  def isEmpty = {
+    length.equals(0)
+  }
+
+  def notEmply = {
+    length > 0
+  }
+
+  def computeHash(): Long = {
+    val a = ByteBuffer.allocate(8).put(ipSrc).putInt(portSrc).getLong(0)
+    val b = ByteBuffer.allocate(8).put(ipDst).putInt(portDst).getLong(0)
+
+    val d = Math.abs(a - b)
+    val min = a + (d & d >> 63)
+    val max = b - (d & d >> 63)
+
+    max << 64 | min
+  }
+}
+
+case class TractorTcpFlow(timestamps: scala.collection.immutable.List[Double] = List[Double](), ipSrc: Array[Byte] = Array[Byte](), portSrc: Int = 0, ipDst: Array[Byte] = Array[Byte](), portDst: Int = 0, length: scala.collection.immutable.List[Int] = List[Int](), payloadLen: scala.collection.immutable.List[Int] = List[Int](), tcpFlags: Array[Int] = new Array[Int](9), ackSet: Int = 0, payloads: collection.immutable.TreeMap[Long, (Long, Int)] = new collection.immutable.TreeMap(), packetsWithSuck: Int = 0, packetsWithSuckAck: Int = 0, sackMax: Short = 0) extends Serializable {
+
+  def +(p: TractorTcpPacket): TractorTcpFlow = {
+    TractorTcpFlow(
+      this.timestamps :+ p.timestamp,
+      p.ipSrc,
+      p.portSrc,
+      p.ipDst,
+      p.portDst,
+      this.length :+ p.length,
+      this.payloadLen :+ p.payloadLen,
+      (this.tcpFlags, p.tcpFlags).zipped.map(_ + _),
+      if ((p.tcpFlags(3) > 0) && tcpFlags.count(x => x > 0) == 1)
+        this.ackSet + 1
+      else
+        this.ackSet,
+      this.payloads + (p.seq ->(p.payloadStart, p.payloadLen)),
+      if (p.sackBlocksCount > 0)
+        this.packetsWithSuck + 1
+      else this.packetsWithSuck,
+      if (p.tcpFlags(3) > 0 && p.sackBlocksCount > 0)
+        this.packetsWithSuckAck + 1
+      else this.packetsWithSuckAck,
+      this.sackMax.max(p.sackBlocksCount))
+  }
+
+  def ++(f: TractorTcpFlow): TractorTcpFlow = {
+    TractorTcpFlow(
+      this.timestamps ++ f.timestamps,
+      f.ipSrc,
+      f.portSrc,
+      f.ipDst,
+      f.portDst,
+      this.length ++ f.length,
+      this.payloadLen ++ f.payloadLen,
+      (this.tcpFlags, f.tcpFlags).zipped.map(_ + _),
+      this.ackSet + f.ackSet,
+      this.payloads ++ f.payloads
+    )
+  }
+
+  def isSever = {
+    portSrc < portDst
+  }
+
+  def getFirstPacketSignature(file: File): Array[Byte] = {
+    var data = Array[Byte](4)
+    val zippedFlow = payloads.filter((p: (Long, (Long, Int))) => p._2._2 > 0)
+    if (zippedFlow.nonEmpty) {
+      val (key, value) = zippedFlow.head
+      val rafObj = new RandomAccessFile(file)(ByteConverterLittleEndian)
+      rafObj.seek(value._1)
+      data = rafObj.readByte(4)
+      rafObj.close
+    }
+    data
+  }
+
+  def extractData(file: File): Array[Byte] = {
+    val rafObj = new RandomAccessFile(file)(ByteConverterLittleEndian)
+    var data = Array[Byte]()
+    payloads.foreach((p: (Long, (Long, Int))) => {
+      rafObj.seek(p._2._1)
+      data ++= rafObj.readByte(p._2._2)
+    })
+    rafObj.close
+    data
+  }
+
+  override def toString: String = {
+    s"$ipSrc:$portSrc -> $ipDst:$portDst, $timestamps $payloads $length $payloadLen %s".format(tcpFlags.toList)
+  }
+}
+
+case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), serverFlow: TractorTcpFlow = TractorTcpFlow()) extends Serializable {
   def +(f: TractorTcpFlow): BidirectionalTcpFlow = {
     if (f.isSever)
       BidirectionalTcpFlow(this.clientFlow, this.serverFlow ++ f)
@@ -245,4 +395,3 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
     result
   }
 }
-

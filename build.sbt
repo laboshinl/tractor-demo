@@ -16,18 +16,11 @@ test in assembly := {}
 
 libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-cluster" % akkaVersion,
-  "com.typesafe.akka" %% "akka-cluster-tools" % akkaVersion,
-  "com.typesafe.akka" %% "akka-slf4j" % akkaVersion,
-  "com.typesafe.akka" %% "akka-agent" % akkaVersion,
-  "com.typesafe.akka" %% "akka-contrib" % akkaVersion,
-  "ch.qos.logback" % "logback-classic" % "1.0.9",
   "com.github.romix.akka" %% "akka-kryo-serialization" % "0.4.1",
   "org.apache.commons" % "commons-math3" % "3.6.1",
-  "org.scalaz" %% "scalaz-core" % "7.2.6",
-  "com.github.romix.akka" %% "akka-kryo-serialization" % "0.4.1",
-  "org.spire-math" % "spire_2.11" % "0.12.0",
-  "com.typesafe.play" % "play_2.11" % "2.5.9"
-  )
+  "org.spire-math" % "spire_2.11" % "0.12.0"
+)
 
 resolvers += Resolver.sonatypeRepo("snapshots")
 
+fork in run := true
