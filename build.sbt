@@ -9,7 +9,9 @@ lazy val akkaVersion = "2.4.6"
 fork in Test := true
 
 mainClass in assembly := Some("ru.laboshinl.tractor.ApplicationMain")
+
 assemblyJarName in assembly := "tractor.jar"
+
 test in assembly := {}
 
 libraryDependencies ++= Seq(
@@ -23,5 +25,9 @@ libraryDependencies ++= Seq(
   "org.apache.commons" % "commons-math3" % "3.6.1",
   "org.scalaz" %% "scalaz-core" % "7.2.6",
   "com.github.romix.akka" %% "akka-kryo-serialization" % "0.4.1",
-  "org.spire-math" % "spire_2.11" % "0.12.0"
+  "org.spire-math" % "spire_2.11" % "0.12.0",
+  "com.typesafe.play" % "play_2.11" % "2.5.9"
   )
+
+resolvers += Resolver.sonatypeRepo("snapshots")
+

@@ -51,7 +51,7 @@ class SplitActor extends Actor {
   private def splitFile(file: File, chunkSize: Long): ListBuffer[(Long, Long)] = {
     val chunksCount: Long = math.ceil(file.length.toDouble / chunkSize).toInt
     var splits = new ListBuffer[(Long, Long)]()
-    for (i <- 0L to chunksCount - 1) {
+    for (i <- 0L until chunksCount) {
       val start: Long = chunkSize * i
       val stop: Long = if (i.equals(chunksCount - 1)) file.length() else chunkSize * (i + 1) - 1
       splits += Tuple2(start, stop)

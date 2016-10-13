@@ -1,12 +1,12 @@
 package ru.laboshinl.tractor
 
-import java.io.File
+import java.io.{ObjectInputStream, File}
 
 import akka.util.ByteString
 import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics
 
-import scala.collection.mutable.ListBuffer
-
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
+import scala.util.control.Breaks._
 /**
  * Created by laboshinl on 10/10/16.
  */
@@ -89,72 +89,115 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
     serverFlow.getFirstPacketSignature(file)
   }
 
+  def getServerIp : String ={
+    ipToString(serverFlow.ipSrc)
+  }
+
+  def getClientIp : String ={
+    ipToString(serverFlow.ipDst)
+  }
+
+  private def ipToString(ip: Array[Byte]): String = {
+    if (ip.length.equals(4))
+      "%s.%s.%s.%s".format(ip(0) & 0xFF, ip(1) & 0xFF, ip(2) & 0xFF, ip(3) & 0xFF)
+    else
+      "no.ip.address"
+  }
+
   def extractHttpFiles(file: File): ListBuffer[ByteString] = {
     var files = ListBuffer[ByteString]()
     var data = ByteString.fromArray(serverFlow.extractData(file))
-    var beginningOfHeader = 0
-    while (!beginningOfHeader.equals(-1)) {
-      beginningOfHeader = data.indexOfSlice(ByteString.fromArray(Array[Byte](0x48, 0x54, 0x54, 0x50, 0x2f))) //HTTP-
-      val (previous, next) = data.splitAt(beginningOfHeader)
-      if (previous.nonEmpty)
-        files += previous
-      val endOfHeader = next.indexOfSlice(ByteString.fromArray(Array[Byte](0x0d, 0x0a, 0x0d, 0x0a)))
-      data = next.splitAt(endOfHeader + 4)._2
+    breakable {
+      while (true) {
+        val beginningOfHeader = data.indexOfSlice(ByteString.fromArray(Array[Byte](0x48, 0x54, 0x54, 0x50, 0x2f))) //HTTP-
+        if(beginningOfHeader.equals(-1)) break()
+        val (previous, next) = data.splitAt(beginningOfHeader)
+        if (previous.nonEmpty)
+          files += previous
+        val endOfHeader = next.indexOfSlice(ByteString.fromArray(Array[Byte](0x0d, 0x0a, 0x0d, 0x0a)))
+        if(endOfHeader.equals(-1)) break()
+        data = next.splitAt(endOfHeader + 4)._2
+      }
     }
     files
   }
 
-  def getProtoByPort: String = {
-    val proto = serverFlow.portSrc match {
-      case 1 => "TCPMUX"
-      case 5 => "RJE"
-      case 7 => "ECHO"
-      case 18 => "MSP"
-      case 20 => "FTP-Data"
-      case 21 => "FTP-Control"
-      case 22 => "SSH"
-      case 23 => "Telnet"
-      case 25 => "SMTP"
-      case 29 => "MSG ICP"
-      case 37 => "Time"
-      case 42 => "Nameserv"
-      case 43 => "WhoIs"
-      case 49 => "Login"
-      case 53 => "DNS"
-      case 69 => "TFTP"
-      case 70 => "Gopher"
-      case 79 => "Finger"
-      case 80 => "HTTP"
-      case 103 => "X.400 Standard"
-      case 108 => "SNA Gateway Access Server"
-      case 109 => "POP2"
-      case 110 => "POP3"
-      case 115 => "SFTP"
-      case 118 => "SQL Services"
-      case 119 => "NNTP"
-      case 137 => "NetBIOS Name Service"
-      case 139 => "NetBIOS Datagram Service"
-      case 143 => "IMAP"
-      case 150 => "NetBIOS Session Service"
-      case 156 => "SQL Server"
-      case 161 => "SNMP"
-      case 179 => "BGP"
-      case 190 => "GACP"
-      case 194 => "IRC"
-      case 197 => "DLS"
-      case 389 => "LDAP"
-      case 396 => "Novell Netware over IP"
-      case 443 => "HTTPS"
-      case 444 => "SNPP"
-      case 445 => "Microsoft-DS"
-      case 458 => "Apple QuickTime"
-      case 546 => "DHCP Client"
-      case 547 => "DHCP Server"
-      case 563 => "SNEWS"
-      case 569 => "MSN"
-      case 1080 => "Socks"
-      case _ => "unknown"
+  def extractServerHttpHeaders(file: File): ListBuffer[ByteString] = {
+    var files = ListBuffer[ByteString]()
+    var data = ByteString.fromArray(serverFlow.extractData(file))
+    //var beginningOfHeader = 0
+    breakable {
+      while (true) {
+        val beginningOfHeader = data.indexOfSlice(ByteString.fromArray(Array[Byte](0x48, 0x54, 0x54, 0x50, 0x2f))) //HTTP-
+        val endOfHeader = data.indexOfSlice(ByteString.fromArray(Array[Byte](0x0d, 0x0a, 0x0d, 0x0a)))
+        if (beginningOfHeader.equals(-1) || endOfHeader.equals(-1))
+          break()
+        files += data.slice(beginningOfHeader, endOfHeader)
+        data = data.splitAt(endOfHeader + 4)._2
+      }
     }
+    files
+  }
+
+  def extractClientHttpHeaders(file: File): ListBuffer[ByteString] = {
+    var files = ListBuffer[ByteString]()
+    var data = ByteString.fromArray(clientFlow.extractData(file))
+    //var beginningOfHeader = 0
+    breakable {
+      while (true) {
+        val beginningOfHeader = data.indexOfSlice(ByteString.fromArray(Array[Byte](0x48, 0x54, 0x54, 0x50, 0x2f))) //HTTP-
+        val endOfHeader = data.indexOfSlice(ByteString.fromArray(Array[Byte](0x0d, 0x0a, 0x0d, 0x0a)))
+        if (beginningOfHeader.equals(-1) || endOfHeader.equals(-1))
+          break()
+        files += data.slice(beginningOfHeader, endOfHeader)
+        data = data.splitAt(endOfHeader + 4)._2
+      }
+    }
+    files
+  }
+
+  def clientHttpHeadersAsMap(file : File) : List[Map[String, String]] = {
+    var result = List[Map[String,String]]()
+    val headers = extractClientHttpHeaders(file)
+    if ( headers.nonEmpty) {
+      headers.foreach((f: ByteString) => {
+        var m = Map[String,String]().withDefaultValue("")
+        val options = f.utf8String.split("\\r?\\n")
+        if(options.nonEmpty) {
+          options.foreach((s: String) => {
+            val k = s.split(": ")
+            if (k.size == 2)
+              m = m.updated(k.head, k.tail.head)
+          })
+        }
+        result = m :: result
+      })
+    }
+    result
+  }
+
+  def serverHttpHeadersAsMap(file : File) : List[Map[String, String]] = {
+    var result = List[Map[String,String]]()
+    val headers = extractServerHttpHeaders(file)
+    if ( headers.nonEmpty) {
+      headers.foreach((f: ByteString) => {
+        var m = Map[String,String]().withDefaultValue("")
+        val options = f.utf8String.split("\\r?\\n")
+        if(options.nonEmpty) {
+          options.foreach((s: String) => {
+            val k = s.split(": ")
+            if (k.size == 2)
+              m = m.updated(k.head, k.tail.head)
+          })
+        }
+        result = m :: result
+      })
+    }
+    result
+  }
+
+  def getProtoByPort(ports : collection.mutable.Map[Int,String]): String = {
+    val proto = ports(serverFlow.portSrc)
     proto
   }
 
@@ -170,19 +213,19 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
     serverFlow.extractData(file)
   }
 
-  def serchServerData(file: File, string: akka.util.ByteString): Boolean = {
+  def searchServerData(file: File, string: akka.util.ByteString): Boolean = {
     akka.util.ByteString.fromArray(serverFlow.extractData(file)).containsSlice(string)
   }
 
-  def serchClientrData(file: File, string: akka.util.ByteString): Boolean = {
+  def searchClientData(file: File, string: akka.util.ByteString): Boolean = {
     akka.util.ByteString.fromArray(clientFlow.extractData(file)).containsSlice(string)
   }
 
-  def serchSeverData(file: File, string: String): Boolean = {
+  def searchSeverData(file: File, string: String): Boolean = {
     akka.util.ByteString.fromArray(serverFlow.extractData(file)).containsSlice(akka.util.ByteString.fromString(string, "utf-8"))
   }
 
-  def serchClientData(file: File, string: String): Boolean = {
+  def searchClientData(file: File, string: String): Boolean = {
     akka.util.ByteString.fromArray(clientFlow.extractData(file)).containsSlice(akka.util.ByteString.fromString(string, "utf-8"))
   }
 
@@ -202,3 +245,4 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
     result
   }
 }
+

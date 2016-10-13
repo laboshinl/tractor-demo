@@ -15,7 +15,7 @@ case class TractorTcpPacket(timestamp: Double = 0, ipSrc: Array[Byte] = Array(),
     portSrc < portDst
   }
 
-  def isEmply = {
+  def isEmpty = {
     length.equals(0)
   }
 

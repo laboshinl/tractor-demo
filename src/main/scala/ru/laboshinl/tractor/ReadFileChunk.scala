@@ -11,99 +11,77 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.control.Breaks._
 
-case class BidirectionalFlows(flows: Map[Long, BidirectionalTcpFlow]) extends Serializable
+case class BidirectionalFlows(flows: Map[Long, BidirectionalTcpFlow]) extends Serializable {
+  def getProtocolStatistics(ports : scala.collection.mutable.Map[Int,String]) : Seq[(String, Int)] = {
+    flows.groupBy(_._2.getProtoByPort(ports)).mapValues(_.size).toSeq.sortBy(- _._2)
+  }
+  def getServerIpStatistics() : Seq[(String, Int)] = {
+    flows.groupBy(_._2.getServerIp).mapValues(_.size).toSeq.sortBy(- _._2)
+  }
+  def getClientIpStatistics() : Seq[(String, Int)] = {
+    flows.groupBy(_._2.getClientIp).mapValues(_.size).toSeq.sortBy(- _._2)
+  }
+
+//  println(res.flows.groupBy(_._2.getProtoByPort(ports)).mapValues(_.size).toSeq.sortBy(- _._2))  //  Protocol Statistics
+//  println(res.flows.groupBy(_._2.getClientIp).mapValues(_.size).toSeq.sortBy(- _._2))  // Top Clients
+//  println(res.flows.groupBy(_._2.getServerIp).mapValues(_.size).toSeq.sortBy(- _._2))  // Top Servers
+}
 
 case class HashedFlow(hash: Long, Flow: TractorTcpFlow) extends Serializable
 
 class GlobalAggregator extends Actor {
   var replyTo = ActorRef.noSender
-  //implicit val timeout = Timeout(5 seconds)
-  //val t1 = System.currentTimeMillis()
-  private var jobSize = Int.MaxValue
-  private var counter = 0
-  //  val counter = Agent(0)
-  //  val jobSize = Agent(Int.MaxValue)
+  private var scheduled = Int.MaxValue
+  private var completed = 0
 
   var aggRes = Map[Long, BidirectionalTcpFlow]().withDefaultValue(BidirectionalTcpFlow())
 
-  //val tick = context.system.scheduler.schedule(300 millis, 300 millis, self, "tick")
-
   override def receive: Actor.Receive = {
     case x: Int =>
-      jobSize = x
+      scheduled = x
       replyTo = sender()
-      //jobSize send x
-      check()
-    case BidirectionalFlows(f) => //f : Map[Long, BidirectionalTcpFlow] =>
-      f.foreach((x: (Long, BidirectionalTcpFlow)) => aggRes = aggRes.updated(x._1, aggRes(x._1) ++ x._2))
-      counter += 1
-      //counter send (_ + 1)
-      check()
-
-    //    case "tick" =>
-    //      println("tick")
-    //      check()
+      replyOnComplete()
+    case BidirectionalFlows(f) =>
+      f.foreach(flow => aggRes = aggRes.updated(flow._1, aggRes(flow._1) ++ flow._2))
+      completed += 1
+      replyOnComplete()
   }
 
-  private def check(): Unit = {
-    if (counter.equals(jobSize)) {
-      //    val result = Future sequence List(counter.future, jobSize.future)
-      //    result.onSuccess {
-      //      case res =>
-      //        if (res(0).equals(res(1))) {
-      //println("Finished in", System.currentTimeMillis() - t1, "flows", aggRes.size)
+  private def replyOnComplete(): Unit = {
+    if (completed.equals(scheduled)) {
       replyTo ! BidirectionalFlows(aggRes)
       context.stop(self)
+    } else {
+      val percentCompleted = completed * 100 / scheduled
+      if ((percentCompleted % 5).equals(0) && percentCompleted > 0)
+        println(s"$percentCompleted %% completed")
     }
-    //else println("%.2f %%"format(counter.toFloat/jobSize * 100))
-    //}
   }
 }
 
 class LocalAggregator(replyTo: ActorRef) extends Actor {
-  implicit val timeout = Timeout(5 seconds)
-  //val jobStatus = List()
-  private var jobSize = Int.MaxValue
-  private var counter = 0
-  //  val counter = Agent(0)
-  //  val jobSize = Agent(Int.MaxValue)
+  private var scheduled = Int.MaxValue
+  private var completed = 0
   var aggRes = Map[Long, BidirectionalTcpFlow]().withDefaultValue(BidirectionalTcpFlow())
-
-  //  val tick = context.system.scheduler.schedule(1000 millis, 1000 millis, self, "tick")
   override def receive: Actor.Receive = {
     case x: Int =>
-      jobSize = x
-      check()
-    case HashedFlow(h, f) => //p: Tuple2[Long, TractorTcpFlow] =>
-      counter += 1
-      if (!h.equals(0L)) {
+      scheduled = x
+      replyOnComplete()
+    case HashedFlow(h, f) =>
+      completed += 1
+      if (!h.equals(0L)) //Empty packet
         aggRes = aggRes.updated(h, aggRes(h) + f)
-      }
-      check()
-    //    case "tick" =>
-    //      check()
+      replyOnComplete()
   }
-
-  private def check(): Unit = {
-    if (counter.equals(jobSize)) {
+  private def replyOnComplete(): Unit = {
+    if (completed.equals(scheduled)) {
       replyTo ! BidirectionalFlows(aggRes)
       context stop self
     }
   }
-
-  //  private def check() : Unit = {
-  //    val result = Future sequence List(counter.future, jobSize.future)
-  //    result.onSuccess {
-  //      case res =>
-  //        if (res.head.equals(res(1))){
-  //          replyTo ! aggRes
-  //          context stop self
-  //        }
-  //    }
-  //  }
 }
 
-class ReadFileChunk extends Actor {
+class ReadFileChunk extends Actor with ActorLogging{
 
   //val packetReader = context.actorOf(RandomPool(100).props(Props[ReadPacketActor]), "packetReader")
 
@@ -234,13 +212,21 @@ class ReadFileChunk extends Actor {
     val aggregator = context.actorOf(Props(new LocalAggregator(sender())))
     val PcapHeaderLen = 16
     var packetCount = 0
-    while (chunk.getFilePointer < stop) {
-      val currentPosition = chunk.getFilePointer
-      chunk.skipBytes(12)
-      val packetLen = chunk.readInt()
-      chunk.seek(currentPosition)
-      context.actorOf(Props[ReadPacketActor]) tell(ReadPacket(ByteString.fromArray(chunk.readByte(packetLen + PcapHeaderLen)), currentPosition + PcapHeaderLen), aggregator)
-      packetCount += 1
+    breakable {
+      while (chunk.getFilePointer < stop) {
+        val currentPosition = chunk.getFilePointer
+        chunk.skipBytes(12)
+        val packetLen = chunk.readInt()
+        chunk.seek(currentPosition)
+        if (41.to(65535).contains(packetLen)) {
+          context.actorOf(Props[ReadPacketActor]) tell(ReadPacket(ByteString.fromArray(chunk.readByte(packetLen + PcapHeaderLen)), currentPosition + PcapHeaderLen), aggregator)
+          packetCount += 1
+        }
+        else {
+          log.error("Error checking next packet size at position {}, trying to recover. Already finished packets {}", currentPosition ,packetCount)
+          seekToFirstPacketRecord(chunk)
+        }
+      }
     }
     aggregator ! packetCount
   }
