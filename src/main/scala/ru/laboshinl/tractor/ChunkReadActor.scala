@@ -21,22 +21,33 @@ class ChunkReadActor extends Actor with ActorLogging {
   private def readFileChunk(file: File, start: Long, stop: Long): Unit = {
     val chunk = new RandomAccessFile(file)(ByteConverterLittleEndian)
     chunk.seek(start)
-    seekToFirstPacketRecord(chunk)
-    splitPackets(chunk, stop)
+    try {
+      seekToFirstPacketRecord(chunk)
+      splitPackets(chunk, stop)
+    } catch {
+      case e: Exception => sender() ! Skipped
+    }
     chunk close()
   }
 
+  @throws(classOf[java.io.EOFException])
   private def seekToFirstPacketRecord(file: RandomAccessFile): Unit = {
+    val prepos = file.getFilePointer
     breakable {
       while (file.getFilePointer < file.length) {
         val position = file.getFilePointer
         val timestamp = file.readInt()
         file.skipBytes(4)
         val length = file.readInt32(2)
+//        var length = Array[Int](file.readBInt32(),file.readBInt32())
+////        length :: file.readBInt32()
+////        length(1) = file.readBInt32()
         if (length(0).equals(length(1)) && 41.to(65535).contains(length(0))) {
+         // println("postposition", prepos, position, length(0))
           file.skipBytes(length(0))
-          if (0.to(600).contains(timestamp - file.readInt())) {
+          if (0.to(600).contains(timestamp - file.readInt())) { //600
             file.seek(position)
+//            println("postposition", prepos, position, length(0))
             break()
           }
         } else file.seek(position + 1)
@@ -61,7 +72,13 @@ class ChunkReadActor extends Actor with ActorLogging {
         }
         else {
           log.error("Error checking next packet size at position {}, trying to recover. Already finished packets {}", currentPosition, packetCount)
-          seekToFirstPacketRecord(chunk)
+          try {
+            seekToFirstPacketRecord(chunk)
+            log.error("New position {}", chunk.getFilePointer)
+          }
+          catch {
+            case e: Exception => break()
+          }
         }
       }
     }

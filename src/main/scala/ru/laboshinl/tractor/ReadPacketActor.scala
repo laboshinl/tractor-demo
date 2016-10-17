@@ -81,7 +81,7 @@ class ReadPacketActor extends Actor {
           val payloadLen = packet.size - packetHeadersLen
           val res = TractorTcpPacket(timestamp, ipSrc, portSrc, ipDst, portDst,
             seq, tcpFlags, filePosition + packetHeadersLen, payloadLen, packet.size, sackBlocksCount)
-          sender ! HashedFlow(res.computeHash(), TractorTcpFlow() + res)
+          sender ! HashedPacket(res.computeHash(), res)
         } //else sender ! Skipped
       } //else sender ! Skipped
       sender ! Broadcast(Skipped)

@@ -20,8 +20,8 @@ class LocalAggregateActor(replyTo: ActorRef) extends Actor {
     case Skipped =>
       completed.getAndIncrement()
       replyOnComplete()
-    case HashedFlow(h, f) =>
-      aggRes = aggRes.updated(h, aggRes(h) + f)
+    case HashedPacket(h, p) =>
+      aggRes = aggRes.updated(h, aggRes(h).addPacket(p))
       //completed.getAndIncrement()
       //replyOnComplete()
   }

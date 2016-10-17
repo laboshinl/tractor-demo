@@ -11,7 +11,7 @@ import scala.collection.mutable.ListBuffer
 class LocalWorkerActor extends Actor {
   var replyTo = ActorRef.noSender
   val cores = Runtime.getRuntime.availableProcessors()
-  val reader = context.actorOf(RoundRobinPool(cores*2).props(Props[ChunkReadActor]), "localreader")
+  val reader = context.actorOf(RoundRobinPool(cores).props(Props[ChunkReadActor]), "localreader")
   override def receive: Receive = {
     case FileChunkWithBs(file, start, stop, size, nWorkers) =>
       replyTo = sender()

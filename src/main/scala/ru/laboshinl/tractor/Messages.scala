@@ -23,11 +23,17 @@ case class FileJob(file: File, chunkSize: Long, nWorkers: Int) extends Serializa
 
 case class ReadPacket(packet: ByteString, filePosition: Long) extends Serializable
 
-case class HashedFlow(hash: Long, Flow: TractorTcpFlow) extends Serializable
+case class HashedPacket(hash: Long, packet: TractorTcpPacket) extends Serializable
 
-case class BidirectionalFlows(flows: Map[Long, BidirectionalTcpFlow]) extends Serializable {
+case class BidirectionalFlows(flows: Map[Long, BidirectionalTcpFlow] = Map[Long,BidirectionalTcpFlow]().withDefaultValue(BidirectionalTcpFlow())) extends Serializable {
   def getProtocolStatistics(ports: scala.collection.mutable.Map[Int, String]): Seq[(String, Int)] = {
     flows.groupBy(_._2.getProtoByPort(ports)).mapValues(_.size).toSeq.sortBy(-_._2)
+  }
+
+  def concat(flow : BidirectionalFlows) : BidirectionalFlows = {
+    var temp = this.flows
+    flow.flows.foreach(flow => temp = temp.updated(flow._1, temp(flow._1) ++ flow._2))
+    BidirectionalFlows(temp)
   }
 
   def getServerIpStatistics: Seq[(String, Int)] = {
@@ -168,8 +174,20 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
       BidirectionalTcpFlow(this.clientFlow ++ f, this.serverFlow)
   }
 
+
+  def addPacket(packet : TractorTcpPacket) : BidirectionalTcpFlow = {
+    if (packet.isServer)
+      BidirectionalTcpFlow(this.clientFlow, this.serverFlow + packet)
+    else
+      BidirectionalTcpFlow(this.clientFlow + packet, this.serverFlow)
+  }
+
   def ++(f: BidirectionalTcpFlow): BidirectionalTcpFlow = {
     BidirectionalTcpFlow(this.clientFlow ++ f.clientFlow, this.serverFlow ++ f.serverFlow)
+  }
+
+  def getStartTime: Double = {
+    (this.serverFlow.timestamps ::: this.clientFlow.timestamps).min
   }
 
   def computeFeatures(): ListBuffer[Double] = {
@@ -224,7 +242,7 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
     features += clientFlow.tcpFlags(2)
     features += serverFlow.tcpFlags(2)
     //90-91 Number of combined bytes within packets that have urgent flag set
-    features
+    features.map((f : Double) => if( f.isNaN) 0 else f)
   }
 
   override def toString: String = {
@@ -393,5 +411,8 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
     result += dStat.getMax
     result += dStat.getVariance
     result
+  }
+  def printFeatures = {
+    println(computeFeatures().mkString(","))
   }
 }

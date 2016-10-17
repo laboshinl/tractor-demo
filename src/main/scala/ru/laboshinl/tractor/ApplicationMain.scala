@@ -1,6 +1,6 @@
 package ru.laboshinl.tractor
 
-import java.io.{File, ObjectInputStream}
+import java.io.{PrintWriter, File, ObjectInputStream}
 import java.net.InetAddress
 
 import akka.actor._
@@ -12,6 +12,7 @@ import com.typesafe.config.ConfigFactory
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.Await
 import scala.concurrent.duration._
+import scala.collection.JavaConverters._
 
 object ApplicationMain extends App {
   val usage =
@@ -84,7 +85,7 @@ object ApplicationMain extends App {
 
   scala.io.StdIn.readLine("Hit Return to start >")
 
-  while (true) {
+//  while (true) {
 
     val routees = Await.result(akka.pattern.ask(reader, GetRoutees).mapTo[Routees], 100 second)
     val nodesCount = routees.getRoutees.size()
@@ -97,9 +98,27 @@ object ApplicationMain extends App {
     splits.foreach((s: (Long, Long)) => reader tell(FileChunkWithBs(file, s._1, s._2, chunkSize, nWorkers), aggregator))
 
     try {
+
+      val lpi = SystemCmd.parseWithLpi(inputFile).filter(p => ! Array[String]("HTTP", "Unknown_TCP", "Unsupported", "No_Payload", "Invalid", "Unknown_TCP").contains(p._2)) //detect proto with protoident
+
       val res = Await.result(akka.pattern.ask(aggregator, splits.size).mapTo[BidirectionalFlows], ((file.length() / 1024 / 1024 / 15) + 5) second)
 
-      res.getProtocolStatistics(ports) //Some Work
+      //res.getProtocolStatistics(ports) //Some Work
+      val writer = new PrintWriter(new File("/tmp/%s.csv".format(file.getName) ))
+
+      val filtered = res.flows.filter(f => lpi.isDefinedAt(new java.text.DecimalFormat("#.######").format(f._2.getFlowStart/1000000)))
+
+//      println(lpi.groupBy(_._2).mapValues(_.size).toSeq.sortBy(-_._2))
+//      println(lpi.groupBy(_._2).mapValues(_.size).toSeq.sortBy(-_._2).size)
+
+      var stat = collection.mutable.Map[String,Int]().withDefaultValue(0)
+      filtered.filter(_._2.getProtoByPort(ports) != "http") foreach(f => {
+        stat(lpi.get(new java.text.DecimalFormat("#.######").format(f._2.getFlowStart/1000000)).get) += 1
+        writer.println("%s,%s".format(lpi.get(new java.text.DecimalFormat("#.######").format(f._2.getFlowStart/1000000)).get, f._2.computeFeatures().map( (f : Double) => new java.text.DecimalFormat("#.###").format(f)).mkString(",")/*,f._2.getProtoByPort(ports)*/))
+      })
+      writer.close()
+
+      println(stat.toSeq.sortBy(-_._2))
 
       val takenTime = (System.currentTimeMillis() - t0).toFloat /1000
       val fileSizeMb = file.length().toFloat/1024/1024
@@ -110,7 +129,7 @@ object ApplicationMain extends App {
       case e: Exception => println(s"Something went wrong! $e")
     }
     aggregator ! PoisonPill
-  }
+//  }
   //sys.exit(0)
 
 

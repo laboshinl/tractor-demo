@@ -15,7 +15,8 @@ class GlobalAggregateActor extends Actor  with ActorLogging {
   private val scheduled = new AtomicInteger(Int.MaxValue)
   private val completed = new AtomicInteger(0)
 
-  var aggRes = Map[Long, BidirectionalTcpFlow]().withDefaultValue(BidirectionalTcpFlow())
+  //var aggRes = Map[Long, BidirectionalTcpFlow]().withDefaultValue(BidirectionalTcpFlow())
+var aggRes = BidirectionalFlows()
 
   var prevCompleted = 0
 
@@ -27,8 +28,9 @@ class GlobalAggregateActor extends Actor  with ActorLogging {
     case Skipped =>
       completed.getAndIncrement()
       replyOnComplete()
-    case BidirectionalFlows(f) =>
-      f.foreach(flow => aggRes = aggRes.updated(flow._1, aggRes(flow._1) ++ flow._2))
+    case f : BidirectionalFlows =>
+      //f.foreach(flow => aggRes = aggRes.updated(flow._1, aggRes(flow._1) ++ flow._2))
+      aggRes = aggRes.concat(f)
       completed.getAndIncrement()
       sender() ! PoisonPill
       replyOnComplete()
@@ -36,8 +38,9 @@ class GlobalAggregateActor extends Actor  with ActorLogging {
 
   private def replyOnComplete(): Unit = {
     if (completed.get().equals(scheduled.get())) {
-      if (aggRes nonEmpty)
-        replyTo ! BidirectionalFlows(aggRes)
+    //if((scheduled.get() - completed.get()) < 5 ) {
+      if (aggRes.flows.nonEmpty)
+        replyTo ! aggRes//BidirectionalFlows(aggRes)
       else replyTo ! Skipped
      // println()
     }
