@@ -13,13 +13,7 @@ import scala.util.control.Breaks._
  * Created by laboshinl on 10/13/16.
  */
 
-case class Skipped() extends Serializable
-
-case class FileChunk(file: File, start: Long, stop: Long, nWorkers : Int) extends Serializable
-
-case class FileChunkWithBs(file: File, start: Long, stop: Long, bs: Int, nWorkers : Int) extends Serializable
-
-case class FileJob(file: File, chunkSize: Long, nWorkers: Int) extends Serializable
+case class FileBlock(file: File, start: Long, stop: Long)
 
 case class ReadPacket(packet: ByteString, filePosition: Long) extends Serializable
 
