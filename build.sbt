@@ -20,7 +20,8 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-cluster" % akkaVersion,
   "com.github.romix.akka" %% "akka-kryo-serialization" % "0.4.1",
   "org.apache.commons" % "commons-math3" % "3.6.1",
-  "org.spire-math" % "spire_2.11" % "0.12.0"
+  "org.spire-math" % "spire_2.11" % "0.12.0",
+  "com.github.pathikrit" %% "better-files" % "2.16.0"
   //"org.bytedeco.javacpp-presets" % "tensorflow" % "0.8.0-1.2",
 // "org.bytedeco.javacpp-presets" % "tensorflow" % tensorVersion classifier "linux-x86_64",
 //  "org.bytedeco.javacpp-presets" % "tensorflow" % "0.10.0-1.2.5-SNAPSHOT"

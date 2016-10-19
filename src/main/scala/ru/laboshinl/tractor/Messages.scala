@@ -23,7 +23,11 @@ case class FileJob(file: File, chunkSize: Long, nWorkers: Int) extends Serializa
 
 case class ReadPacket(packet: ByteString, filePosition: Long) extends Serializable
 
-case class HashedPacket(hash: Long, packet: TractorTcpPacket) extends Serializable
+case class HashedPacket(hash: Long, packet: TractorTcpPacket) extends Serializable {
+  def notEmpty: Boolean = {
+    hash != 0
+  }
+}
 
 case class BidirectionalFlows(flows: Map[Long, BidirectionalTcpFlow] = Map[Long,BidirectionalTcpFlow]().withDefaultValue(BidirectionalTcpFlow())) extends Serializable {
   def getProtocolStatistics(ports: scala.collection.mutable.Map[Int, String]): Seq[(String, Int)] = {

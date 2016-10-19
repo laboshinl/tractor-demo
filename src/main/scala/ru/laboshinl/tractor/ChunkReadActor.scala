@@ -63,7 +63,7 @@ class ChunkReadActor extends Actor with ActorLogging {
     breakable {
       while (chunk.getFilePointer < stop) {
         val currentPosition = chunk.getFilePointer
-        chunk.skipBytes(12)
+        chunk.skipBytes(12) // 4 ts + 4 ts + 4 len1
         val packetLen = chunk.readInt()
         chunk.seek(currentPosition)
         if (41.to(65535).contains(packetLen)) {

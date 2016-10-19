@@ -13,6 +13,8 @@ import scala.collection.mutable.ListBuffer
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.collection.JavaConverters._
+import scala.util.{Failure, Success}
+import scala.concurrent.ExecutionContext.Implicits.global
 
 object ApplicationMain extends App {
   val usage =
@@ -63,10 +65,15 @@ object ApplicationMain extends App {
 
   val system = ActorSystem("ClusterSystem", ConfigFactory.load())
 
-  val reader = system.actorOf(
+//  val reader = system.actorOf(
+//    ClusterRouterPool(RoundRobinPool(0), ClusterRouterPoolSettings(
+//      totalInstances = 1000, maxInstancesPerNode = 1,
+//      allowLocalRoutees = true, useRole = None)).props(Props[LocalWorkerActor]))
+
+  val waiter = system.actorOf(
     ClusterRouterPool(RoundRobinPool(0), ClusterRouterPoolSettings(
       totalInstances = 1000, maxInstancesPerNode = 1,
-      allowLocalRoutees = true, useRole = None)).props(Props[LocalWorkerActor]))
+      allowLocalRoutees = true, useRole = None)).props(Props(new SendWorkWaitResult(Props[SplitWithBs]))))
 
 //    ///***********************************************
 //    var config2 = ConfigFactory.parseString("akka.remote.netty.tcp { port = 2553, bind-port = 2553}").withFallback(ConfigFactory.load())
@@ -85,63 +92,75 @@ object ApplicationMain extends App {
 
   scala.io.StdIn.readLine("Hit Return to start >")
 
-//  while (true) {
+      val routees = Await.result(akka.pattern.ask(waiter, GetRoutees).mapTo[Routees], 100 second)
+      val nodesCount = routees.getRoutees.size()
 
-    val routees = Await.result(akka.pattern.ask(reader, GetRoutees).mapTo[Routees], 100 second)
-    val nodesCount = routees.getRoutees.size()
-
-    val t0 = System.currentTimeMillis()
-
-    val splits = splitFile(file, nodesCount)
-
-    val aggregator = system.actorOf(Props[GlobalAggregateActor])
-    splits.foreach((s: (Long, Long)) => reader tell(FileChunkWithBs(file, s._1, s._2, chunkSize, nWorkers), aggregator))
-
-    try {
-
-      val lpi = SystemCmd.parseWithLpi(inputFile).filter(p => ! Array[String]("HTTP", "Unknown_TCP", "Unsupported", "No_Payload", "Invalid", "Unknown_TCP").contains(p._2)) //detect proto with protoident
-
-      val res = Await.result(akka.pattern.ask(aggregator, splits.size).mapTo[BidirectionalFlows], ((file.length() / 1024 / 1024 / 15) + 5) second)
-
-      //res.getProtocolStatistics(ports) //Some Work
-      val writer = new PrintWriter(new File("/tmp/%s.csv".format(file.getName) ))
-
-      val filtered = res.flows.filter(f => lpi.isDefinedAt(new java.text.DecimalFormat("#.######").format(f._2.getFlowStart/1000000)))
-
-//      println(lpi.groupBy(_._2).mapValues(_.size).toSeq.sortBy(-_._2))
-//      println(lpi.groupBy(_._2).mapValues(_.size).toSeq.sortBy(-_._2).size)
-
-      var stat = collection.mutable.Map[String,Int]().withDefaultValue(0)
-      filtered.filter(_._2.getProtoByPort(ports) != "http") foreach(f => {
-        stat(lpi.get(new java.text.DecimalFormat("#.######").format(f._2.getFlowStart/1000000)).get) += 1
-        writer.println("%s,%s".format(lpi.get(new java.text.DecimalFormat("#.######").format(f._2.getFlowStart/1000000)).get, f._2.computeFeatures().map( (f : Double) => new java.text.DecimalFormat("#.###").format(f)).mkString(",")/*,f._2.getProtoByPort(ports)*/))
-      })
-      writer.close()
-
-      println(stat.toSeq.sortBy(-_._2))
-
-      val takenTime = (System.currentTimeMillis() - t0).toFloat /1000
-      val fileSizeMb = file.length().toFloat/1024/1024
-      val throughput = (fileSizeMb / takenTime).toInt
-
-      println(s"Throughput = $throughput MB/s")
-    } catch {
-      case e: Exception => println(s"Something went wrong! $e")
+  def splitFile(file: File, count: Int): List[FileBlock] = {
+    val bs = math.ceil(file.length.toFloat / count).toLong
+    1.to(count).foldLeft(List[FileBlock]()) { (splits, i) =>
+      val stop: Long = if (i.equals(count)) file.length() else bs * i - 1
+      FileBlock(file, bs * (i - 1), stop) :: splits
     }
-    aggregator ! PoisonPill
-//  }
-  //sys.exit(0)
-
-
-  private def splitFile(file: File, nWorkers: Int): ListBuffer[(Long, Long)] = {
-    val size: Long = math.ceil(file.length.toDouble / nWorkers).toInt
-    var splits = new ListBuffer[(Long, Long)]()
-    for (i <- 0L to nWorkers - 1) {
-      val start: Long = size * i
-      val stop: Long = if (i.equals(nWorkers - 1)) file.length() else size * (i + 1) - 1
-      splits += Tuple2(start, stop)
-    }
-    splits
   }
+
+  //implicit val timeout = Timeout(100 seconds)
+  val result = akka.pattern.ask(waiter, splitFile(file, nodesCount))
+  val startTime = System.currentTimeMillis()
+  result.onComplete {
+    case Success(value) =>
+      println(value.asInstanceOf[BidirectionalFlows].getClientIpStatistics)
+      println("finished in %s".format(System.currentTimeMillis() - startTime))
+
+
+    case Failure(e) =>
+      println("Failed")
+  }
+////  while (true) {
+//
+//    val routees = Await.result(akka.pattern.ask(reader, GetRoutees).mapTo[Routees], 100 second)
+//    val nodesCount = routees.getRoutees.size()
+//
+//    val t0 = System.currentTimeMillis()
+//
+//    val splits = splitFile(file, nodesCount)
+//
+//    val aggregator = system.actorOf(Props[GlobalAggregateActor])
+//    splits.foreach((s: (Long, Long)) => reader tell(FileChunkWithBs(file, s._1, s._2, chunkSize, nWorkers), aggregator))
+//
+//    try {
+//
+//      val lpi = SystemCmd.parseWithLpi(inputFile).filter(p => ! Array[String]("HTTP", "Unknown_TCP", "Unsupported", "No_Payload", "Invalid", "Unknown_TCP").contains(p._2)) //detect proto with protoident
+//
+//      val res = Await.result(akka.pattern.ask(aggregator, splits.size).mapTo[BidirectionalFlows], ((file.length() / 1024 / 1024 / 15) + 5) second)
+//
+//      //res.getProtocolStatistics(ports) //Some Work
+//      val writer = new PrintWriter(new File("/tmp/%s.csv".format(file.getName) ))
+//
+//      val filtered = res.flows.filter(f => lpi.isDefinedAt(new java.text.DecimalFormat("#.######").format(f._2.getFlowStart/1000000)))
+//
+////      println(lpi.groupBy(_._2).mapValues(_.size).toSeq.sortBy(-_._2))
+////      println(lpi.groupBy(_._2).mapValues(_.size).toSeq.sortBy(-_._2).size)
+//
+//      var stat = collection.mutable.Map[String,Int]().withDefaultValue(0)
+//      filtered.filter(_._2.getProtoByPort(ports) != "http") foreach(f => {
+//        stat(lpi.get(new java.text.DecimalFormat("#.######").format(f._2.getFlowStart/1000000)).get) += 1
+//        writer.println("%s,%s".format(lpi.get(new java.text.DecimalFormat("#.######").format(f._2.getFlowStart/1000000)).get, f._2.computeFeatures().map( (f : Double) => new java.text.DecimalFormat("#.###").format(f)).mkString(",")/*,f._2.getProtoByPort(ports)*/))
+//      })
+//      writer.close()
+//
+//      println(stat.toSeq.sortBy(-_._2))
+//
+//      val takenTime = (System.currentTimeMillis() - t0).toFloat /1000
+//      val fileSizeMb = file.length().toFloat/1024/1024
+//      val throughput = (fileSizeMb / takenTime).toInt
+//
+//      println(s"Throughput = $throughput MB/s")
+//    } catch {
+//      case e: Exception => println(s"Something went wrong! $e")
+//    }
+//    aggregator ! PoisonPill
+////  }
+//  //sys.exit(0)
+
 
 }
