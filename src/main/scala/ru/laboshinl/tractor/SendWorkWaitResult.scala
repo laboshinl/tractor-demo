@@ -16,10 +16,10 @@ class SendWorkWaitResult(props: Props) extends Actor with ActorLogging {
 
   override def receive: Receive = {
     case m: Iterable[Any] =>
-      log.info("SendWorkWaitResult received {} {}", m.head.getClass, m.size)
+      log.debug("SendWorkWaitResult received {} {}", m.head.getClass, m.size)
       val recipient = sender()
       val listOfFutures = m.map(akka.pattern.ask(worker, _))
-      log.info("SendWorkWaitResult send to {}", props.actorClass())
+      log.debug("SendWorkWaitResult send to {}", props.actorClass())
       val futureSequence = Future sequence listOfFutures
       futureSequence.onSuccess {
         case res: List[Any] =>

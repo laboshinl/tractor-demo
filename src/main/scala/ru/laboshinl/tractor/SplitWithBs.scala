@@ -9,10 +9,10 @@ class SplitWithBs extends Actor with ActorLogging {
 
   override def receive: Actor.Receive = {
     case FileBlock(file, start, stop) =>
-      log.info("SplitWithBs received {} - {}", start, stop)
+      log.debug("SplitWithBs received {} - {}", start, stop)
       val splits = splitFile(file, start, stop, 30 * 1024 * 1024)
       waiter tell(splits, sender())
-      log.info("SplitWithBs sent {}", splits)
+      log.debug("SplitWithBs sent {}", splits)
   }
 
   private def splitFile(file: File, start: Long, stop: Long, bs: Long): List[FileBlock] = {
