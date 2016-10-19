@@ -11,7 +11,7 @@ class ProcessFileBlock extends Actor with ActorLogging {
 
   override def receive: Actor.Receive = {
     case FileBlock(file, start, stop) =>
-      log.info("ProcessFileBlock received FileBlock {}-{}", start, stop)
+      log.debug("ProcessFileBlock received FileBlock {}-{}", start, stop)
       var packets = List[ReadPacket]()
       val rafObj = new RandomAccessFile(file)(ByteConverterLittleEndian)
       rafObj.seek(start)
