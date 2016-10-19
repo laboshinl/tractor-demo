@@ -29,9 +29,10 @@ case class BidirectionalFlows(flows: Map[Long, BidirectionalTcpFlow] = Map[Long,
   }
 
   def concat(flow : BidirectionalFlows) : BidirectionalFlows = {
-    var temp = this.flows
-    flow.flows.foreach(flow => temp = temp.updated(flow._1, temp(flow._1) ++ flow._2))
-    BidirectionalFlows(temp)
+//    var temp = this.flows
+//    flow.flows.foreach(flow => temp = temp.updated(flow._1, temp(flow._1) ++ flow._2))
+//    BidirectionalFlows(temp)
+    BidirectionalFlows(flow.flows.foldLeft(this.flows)((a, b) => a.updated(b._1, a(b._1) ++ b._2)))
   }
 
   def getServerIpStatistics: Seq[(String, Int)] = {
@@ -410,7 +411,7 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
     result += dStat.getVariance
     result
   }
-  def printFeatures = {
+  def printFeatures() = {
     println(computeFeatures().mkString(","))
   }
 }
