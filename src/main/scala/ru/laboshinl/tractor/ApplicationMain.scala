@@ -70,13 +70,13 @@ object ApplicationMain extends App {
       totalInstances = 1000, maxInstancesPerNode = 1,
       allowLocalRoutees = true, useRole = None)).props(Props(new SendWorkWaitResult(Props[SplitWithBs]))))
 
-      //*************************************************
-      var config2 = ConfigFactory.parseString("akka.remote.netty.tcp { port = 2553, bind-port = 2553}").withFallback(ConfigFactory.load())
-      ActorSystem("ClusterSystem", config2)
-      //*************************************************
-      var config3 = ConfigFactory.parseString("akka.remote.netty.tcp { port = 2554, bind-port = 2554}").withFallback(ConfigFactory.load())
-      ActorSystem("ClusterSystem", config3)
-      //*************************************************
+//      //*************************************************
+//      var config2 = ConfigFactory.parseString("akka.remote.netty.tcp { port = 2553, bind-port = 2553}").withFallback(ConfigFactory.load())
+//      ActorSystem("ClusterSystem", config2)
+//      //*************************************************
+//      var config3 = ConfigFactory.parseString("akka.remote.netty.tcp { port = 2554, bind-port = 2554}").withFallback(ConfigFactory.load())
+//      ActorSystem("ClusterSystem", config3)
+//      //*************************************************
 
 
   val fis = getClass.getResourceAsStream("/ports.ser")
