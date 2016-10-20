@@ -6,6 +6,7 @@ import java.nio.ByteBuffer
 import akka.util.ByteString
 import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics
 
+import scala.collection.immutable.HashMap
 import scala.collection.mutable.ListBuffer
 import scala.util.control.Breaks._
 
@@ -13,17 +14,12 @@ import scala.util.control.Breaks._
  * Created by laboshinl on 10/13/16.
  */
 
-case class FileBlock(file: File, start: Long, stop: Long)
+case class FileBlock(file: File, start: Long, stop: Long) extends Serializable
 
-case class ReadPacket(packet: ByteString, filePosition: Long) extends Serializable
+//InstantiatorStrategy defaultInstantiatorStrategy = new DefaultInstantiatorStrategy();
+//kryo.getRegistration(HashMap.class).setInstantiator(defaultInstantiatorStrategy.newInstantiatorOf(HashMap.class));
 
-case class HashedPacket(hash: Long, packet: TractorTcpPacket) extends Serializable {
-  def notEmpty: Boolean = {
-    hash != 0
-  }
-}
-
-case class BidirectionalFlows(flows: Map[Long, BidirectionalTcpFlow] = Map[Long,BidirectionalTcpFlow]().withDefaultValue(BidirectionalTcpFlow())) extends Serializable {
+case class BidirectionalFlows(flows: scala.collection.immutable.Map[Long, BidirectionalTcpFlow]= scala.collection.immutable.HashMap[Long,BidirectionalTcpFlow]().withDefaultValue(BidirectionalTcpFlow())/*.withDefaultValue(BidirectionalTcpFlow())*/) extends Serializable {
   def getProtocolStatistics(ports: scala.collection.mutable.Map[Int, String]): Seq[(String, Int)] = {
     flows.groupBy(_._2.getProtoByPort(ports)).mapValues(_.size).toSeq.sortBy(-_._2)
   }
@@ -37,6 +33,10 @@ case class BidirectionalFlows(flows: Map[Long, BidirectionalTcpFlow] = Map[Long,
 
   def getServerIpStatistics: Seq[(String, Int)] = {
     flows.groupBy(_._2.getServerIp).mapValues(_.size).toSeq.sortBy(-_._2)
+  }
+
+  def addPacket(hash: Long, packet: TractorTcpPacket): BidirectionalFlows = {
+    BidirectionalFlows(this.flows.updated(hash, this.flows(hash).addPacket(packet)))
   }
 
   def getClientIpStatistics: Seq[(String, Int)] = {
@@ -75,8 +75,8 @@ case class TractorTcpPacket(timestamp: Double = 0, ipSrc: Array[Byte] = Array(),
     length.equals(0)
   }
 
-  def notEmply = {
-    length > 0
+  def nonEmpty = {
+    seq > 0
   }
 
   def computeHash(): Long = {

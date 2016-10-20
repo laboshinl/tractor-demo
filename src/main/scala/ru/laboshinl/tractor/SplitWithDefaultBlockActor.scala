@@ -10,7 +10,9 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
+
 class SplitWithDefaultBlockActor(router: ActorRef, bs: Int) extends Actor with ActorLogging {
+
   implicit val timeout = Timeout(1000 seconds)
 
   override def receive: Receive = {
@@ -26,8 +28,8 @@ class SplitWithDefaultBlockActor(router: ActorRef, bs: Int) extends Actor with A
       val futureSequence = Future sequence listOfFutures
 
       futureSequence.onSuccess {
-        case m: List[BidirectionalFlows] =>
-          recipient ! m.foldLeft(BidirectionalFlows()) { (acc, f) =>
+        case m: List[Any] =>
+          recipient ! m.map(_.asInstanceOf[BidirectionalFlows]).foldLeft(BidirectionalFlows()) { (acc, f) =>
             acc.concat(f)
           }
       }

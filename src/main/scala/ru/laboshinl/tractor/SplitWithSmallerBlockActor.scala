@@ -34,8 +34,8 @@ class SplitWithSmallerBlockActor extends Actor with ActorLogging {
       val futureSequence = Future sequence listOfFutures
 
       futureSequence.onSuccess {
-        case m: List[BidirectionalFlows] =>
-          recipient ! m.foldLeft(BidirectionalFlows()) { (acc, f) =>
+        case m: List[Any] =>
+          recipient ! m.map(_.asInstanceOf[BidirectionalFlows]).foldLeft(BidirectionalFlows()) { (acc, f) =>
             acc.concat(f)
           }
       }

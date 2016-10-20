@@ -16,10 +16,10 @@ test in assembly := {}
 
 libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-cluster" % akkaVersion,
-  "com.github.romix.akka" %% "akka-kryo-serialization" % "0.4.1",
   "org.apache.commons" % "commons-math3" % "3.6.1",
-  "org.spire-math" % "spire_2.11" % "0.12.0"/*,
-  "com.github.pathikrit" %% "better-files" % "2.16.0"*/
+  "org.spire-math" % "spire_2.11" % "0.12.0",
+  "com.twitter" % "chill-akka_2.11" % "0.8.1"
+  /*"com.github.pathikrit" %% "better-files" % "2.16.0"*/
 )
 
 

@@ -49,55 +49,55 @@ class ProcessFileBlockActor extends Actor with ActorLogging {
 
   @throws(classOf[java.io.EOFException])
   private def readFileChunkPackets(rafObj: RandomAccessFile, start: Long, stop: Long ) : BidirectionalFlows = {
-    var flows = Map[Long,BidirectionalTcpFlow]().withDefaultValue(BidirectionalTcpFlow())
+    var flows = BidirectionalFlows()
     try {
       rafObj.seek(start)
       seekToPacketRecord(rafObj)
-    }
-    catch {
-      case e: Exception =>
-        log.error("Cannot seek to fist packet, {}", e)
-    }
-    breakable {
-      while (rafObj.getFilePointer < stop) {
-        val packetStart = rafObj.getFilePointer
-        rafObj.skipBytes(8)
-        val lengths = rafObj.readInt32(2)
-        if (lengths(0).equals(lengths(1)) // additional check
-          && 41.to(65535).contains(lengths(0))) {
-          rafObj.seek(packetStart)
-          if (packetStart + PcapHeaderLen + lengths(0) > rafObj.length) {
-            log.error("Packet exceeded file size")
-            break()
-          }
-          try {
-            val packet = readPacket(rafObj)
-            if (packet.notEmply) {
-              val hash = packet.computeHash()
-              flows = flows.updated(hash, flows(hash).addPacket(packet))
+      breakable {
+        while (rafObj.getFilePointer < stop) {
+          val packetStart = rafObj.getFilePointer
+          rafObj.skipBytes(8)
+          val lengths = rafObj.readInt32(2)
+          if (lengths(0).equals(lengths(1)) // additional check
+            && 41.to(65535).contains(lengths(0))) {
+            rafObj.seek(packetStart)
+            if (packetStart + PcapHeaderLen + lengths(0) > rafObj.length) {
+              log.error("Packet exceeded file size")
+              break()
+            }
+            try {
+              val packet = readPacket(rafObj)
+              if (packet.nonEmpty) {
+                val hash = packet.computeHash()
+                flows = flows.addPacket(hash, packet)
+              }
+            }
+            catch {
+              case e: Exception =>
+                log.error("Cannot read packet {}", e)
+                break()
             }
           }
-          catch {
-            case e: Exception =>
-              log.error("Cannot read packet {}", e)
-              break()
-          }
-        }
-        else {
-          log.error("Wrong packet at position {}", packetStart)
-          try {
-            rafObj.seek(packetStart)
-            seekToPacketRecord(rafObj)
-          }
-          catch {
-            case e: Exception =>
-              log.error("Cannot recover, skipping block {}", e)
-              break()
+          else {
+            log.error("Wrong packet at position {}", packetStart)
+            try {
+              rafObj.seek(packetStart)
+              seekToPacketRecord(rafObj)
+            }
+            catch {
+              case e: Exception =>
+                log.error("Cannot recover, skipping block {}", e)
+                break()
+            }
           }
         }
       }
     }
-    BidirectionalFlows(flows)
+    catch {
+      case e: Exception =>
+        log.error("Processing block failed, {}", e)
+    }
+    flows
   }
 
   @throws(classOf[java.io.EOFException])
