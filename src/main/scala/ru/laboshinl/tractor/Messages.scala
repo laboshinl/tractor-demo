@@ -91,7 +91,15 @@ case class TractorTcpPacket(timestamp: Double = 0, ipSrc: Array[Byte] = Array(),
   }
 }
 
-case class TractorTcpFlow(timestamps: scala.collection.immutable.List[Double] = List[Double](), ipSrc: Array[Byte] = Array[Byte](), portSrc: Int = 0, ipDst: Array[Byte] = Array[Byte](), portDst: Int = 0, length: scala.collection.immutable.List[Int] = List[Int](), payloadLen: scala.collection.immutable.List[Int] = List[Int](), tcpFlags: Array[Int] = new Array[Int](9), ackSet: Int = 0, payloads: collection.immutable.TreeMap[Long, (Long, Int)] = new collection.immutable.TreeMap(), packetsWithSuck: Int = 0, packetsWithSuckAck: Int = 0, sackMax: Short = 0) extends Serializable {
+case class TractorTcpFlow(timestamps: scala.collection.immutable.List[Double] = List[Double](),
+                          ipSrc: Array[Byte] = Array[Byte](), portSrc: Int = 0,
+                          ipDst: Array[Byte] = Array[Byte](), portDst: Int = 0,
+                          length: scala.collection.immutable.List[Int] = List[Int](),
+                          payloadLen: scala.collection.immutable.List[Int] = List[Int](),
+                          tcpFlags: Array[Int] = new Array[Int](9), ackSet: Int = 0,
+                          payloads: collection.immutable.TreeMap[Long, (Long, Int)] = new collection.immutable.TreeMap(),
+                          packetsWithSuck: Int = 0, packetsWithSuckAck: Int = 0, sackMax: Short = 0)
+  extends Serializable {
 
   def +(p: TractorTcpPacket): TractorTcpFlow = {
     TractorTcpFlow(
