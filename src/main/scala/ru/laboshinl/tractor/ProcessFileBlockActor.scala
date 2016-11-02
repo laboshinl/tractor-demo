@@ -68,7 +68,7 @@ class ProcessFileBlockActor extends Actor with ActorLogging {
             try {
               val packet = readPacket(rafObj)
               if (packet.nonEmpty) {
-                val hash = packet.computeHash()
+                val hash = packet.computeHash3()
                 flows = flows.addPacket(hash, packet)
               }
             }
@@ -79,14 +79,14 @@ class ProcessFileBlockActor extends Actor with ActorLogging {
             }
           }
           else {
-            log.error("Wrong packet at position {}", packetStart)
+            log.error("Wrong packet at position {} / {}", packetStart, rafObj.length)
             try {
               rafObj.seek(packetStart)
               seekToPacketRecord(rafObj)
             }
             catch {
               case e: Exception =>
-                log.error("Cannot recover, skipping block {}", e)
+                log.error("Cannot recover, skipping block due to {}", e)
                 break()
             }
           }
@@ -176,7 +176,7 @@ class ProcessFileBlockActor extends Actor with ActorLogging {
         }
         val packetHeadersLen = EthHeaderLen + ipHeaderLen + tcpHeaderLen
         val payloadLen = packetLen - packetHeadersLen
-        packet = TractorTcpPacket(timestamp, ipSrc, portSrc, ipDst, portDst,
+        packet = TractorTcpPacket(timestamp, macSrc, ipSrc, portSrc, macDst, ipDst, portDst,
           seq, tcpFlags, currentPosition + packetHeadersLen, payloadLen, packetLen, sackBlocksCount)
       }
     }

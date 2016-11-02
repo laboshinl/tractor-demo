@@ -13,8 +13,8 @@ tf.app.flags.DEFINE_string('train', None,
                            'File containing the training data (labels & features).')
 tf.app.flags.DEFINE_string('test', None,
                            'File containing the test data (labels & features).')
-tf.app.flags.DEFINE_string('test2', None,
-                           'File containing the test2 data (labels & features).')
+# tf.app.flags.DEFINE_string('test2', None,
+#                            'File containing the test2 data (labels & features).')
 tf.app.flags.DEFINE_integer('num_epochs', 1,
                             'Number of passes over the training data.')
 tf.app.flags.DEFINE_integer('num_hidden', 1,
@@ -71,12 +71,12 @@ def main(argv=None):
     # Get the data.
     train_data_filename = FLAGS.train
     test_data_filename = FLAGS.test
-    test2_data_filename = FLAGS.test2
+    # test2_data_filename = FLAGS.test2
 
     # Extract it into numpy arrays.
     train_data, train_labels = extract_data(train_data_filename)
     test_data, test_labels = extract_data(test_data_filename)
-    test2_data, test2_labels = extract_data(test2_data_filename)
+    # test2_data, test2_labels = extract_data(test2_data_filename)
 
     # Get the shape of the training data.
     train_size, num_features = train_data.shape
@@ -95,7 +95,7 @@ def main(argv=None):
 
     # For the test data, hold the entire dataset in one constant node.
     test_data_node = tf.constant(test_data)
-    test2_data_node = tf.constant(test2_data)
+    # test2_data_node = tf.constant(test2_data)
 
     # Define and initialize the network.1
     # Initialize the hidden weights and biases.
@@ -127,9 +127,11 @@ def main(argv=None):
     # Evaluation.
     correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
-
+    config = tf.ConfigProto(
+        device_count = {'GPU': 0}
+    )
     # Create a local session to run this computation.
-    with tf.Session() as s:
+    with tf.Session(config=config) as s:
         saver = tf.train.Saver()
         # saver_def = saver.as_saver_def()
         # print saver_def.filename_tensor_name
@@ -156,7 +158,7 @@ def main(argv=None):
         tf.train.write_graph(s.graph_def, '.', 'trained_model.proto', as_text=False)
         tf.train.write_graph(s.graph_def, '.', 'trained_model.txt', as_text=True)
         print("Accuracy:", accuracy.eval(feed_dict={x: test_data, y_: test_labels}))
-        print("Accuracy:", accuracy.eval(feed_dict={x: test2_data, y_: test2_labels}))
+        # print("Accuracy:", accuracy.eval(feed_dict={x: test2_data, y_: test2_labels}))
 
 
 if __name__ == '__main__':

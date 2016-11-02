@@ -2,6 +2,9 @@ package ru.laboshinl.tractor
 
 import java.io.File
 import java.nio.ByteBuffer
+import java.sql.Timestamp
+import java.util
+
 
 import akka.util.ByteString
 import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics
@@ -42,26 +45,36 @@ case class BidirectionalFlows(flows: scala.collection.immutable.Map[Long, Bidire
   def getClientIpStatistics: Seq[(String, Int)] = {
     flows.groupBy(_._2.getClientIp).mapValues(_.size).toSeq.sortBy(-_._2)
   }
-  //  println(res.flows.filter(_._2.getProtoByPort(ports) == "http").groupBy((p: (Long, BidirectionalTcpFlow)) => {
-  //    val a = p._2.clientHttpHeadersAsMap(file)
-  //    if (a nonEmpty)
-  //      a.head.getOrElse("Host", "")
-  //    else ""
-  //  }).mapValues(_.size).toSeq.sortBy(-_._2))
-  //  println(res.flows.filter(_._2.getProtoByPort(ports) == "http").groupBy((p: (Long, BidirectionalTcpFlow)) => {
-  //    val a = p._2.serverHttpHeadersAsMap(file)
-  //    if (a nonEmpty)
-  //      a.head.getOrElse("Content-Type", "")
-  //    else ""
-  //  }).mapValues(_.size).toSeq.sortBy(-_._2))
-  //  println(res.flows.groupBy(_._2.getProtoByPort(ports)).mapValues(_.size).toSeq.sortBy(- _._2))  //  Protocol Statistics
-  //  println(res.flows.groupBy(_._2.getClientIp).mapValues(_.size).toSeq.sortBy(- _._2))  // Top Clients
-  //  println(res.flows.groupBy(_._2.getServerIp).mapValues(_.size).toSeq.sortBy(- _._2))  // Top Servers
+
+  def getContentStatistic(file :File, ports : collection.mutable.Map[Int,String]) : Seq[(String,Int)] ={
+    flows.filter(p => p._2.getProtoByPort(ports).equals("http")).groupBy(f => {
+      val a = f._2.serverHttpHeadersAsMap(file)
+      if (a nonEmpty)
+        a.head.getOrElse("Content-Type", "undefined").split(";").head
+      else "undefined"
+      }).mapValues(_.size).toSeq.sortBy(-_._2)
+  }
+
+  def getHostStatistic(file :File, ports : collection.mutable.Map[Int,String]) : Seq[(String,Int)] ={
+    flows.filter(p => p._2.getProtoByPort(ports).equals("http")).groupBy(f => {
+      val a = f._2.clientHttpHeadersAsMap(file)
+      if (a nonEmpty)
+        a.head.getOrElse("Host", "undefined").split(";").head
+      else "undefined"
+    }).mapValues(_.size).toSeq.sortBy(-_._2)
+  }
+
+  def getSslHostStatistic(file :File, ports : collection.mutable.Map[Int,String]) : Seq[(String,Int)] ={
+    flows.filter(p => p._2.getProtoByPort(ports).equals("https")).groupBy(f => {
+      f._2.getSslVersion(file)
+    }).mapValues(_.size).toSeq.sortBy(-_._2)
+  }
+
 }
 
 
 
-case class TractorTcpPacket(timestamp: Double = 0, ipSrc: Array[Byte] = Array(), portSrc: Int = 0, ipDst: Array[Byte] = Array(), portDst: Int = 0, seq: Long = 0,
+case class TractorTcpPacket(timestamp: Double = 0, macScr: Array[Byte] = Array(), ipSrc: Array[Byte] = Array(), portSrc: Int = 0, macDst: Array[Byte] = Array(), ipDst: Array[Byte] = Array(), portDst: Int = 0, seq: Long = 0,
                             tcpFlags: Array[Short] = Array(), payloadStart: Long = 0, payloadLen: Int = 0, length: Int = 0, sackBlocksCount: Short = 0) extends Serializable {
   override def toString: String = {
     s"$timestamp  $ipSrc:$portSrc -> $ipDst:$portDst  $length  %s".format(tcpFlags.toList)
@@ -83,29 +96,58 @@ case class TractorTcpPacket(timestamp: Double = 0, ipSrc: Array[Byte] = Array(),
     val a = ByteBuffer.allocate(8).put(ipSrc).putInt(portSrc).getLong(0)
     val b = ByteBuffer.allocate(8).put(ipDst).putInt(portDst).getLong(0)
 
-    val d = Math.abs(a - b)
+    val d = a - b
     val min = a + (d & d >> 63)
     val max = b - (d & d >> 63)
 
     max << 64 | min
   }
+
+  def computeHash2(): Long = {
+    val a = Math.abs(ByteBuffer.allocate(8).put(ipSrc).putInt(portSrc).getLong(0))
+    val b = Math.abs(ByteBuffer.allocate(8).put(ipDst).putInt(portDst).getLong(0))
+    if (a > b) a << 63 | b
+    else b << 63 | a
+//    val d = Math.abs(a - b)
+//    val min = a + (d & d >> 63)
+//    val max = b - (d & d >> 63)
+//
+//    max << 64 | min
+  }
+
+  def computeHash3(): Long = {
+    val a = ByteBuffer.allocate(8).put(ipSrc).putInt(portSrc).getLong(0)
+    val b = ByteBuffer.allocate(8).put(ipDst).putInt(portDst).getLong(0)
+    if (a > b)  a ^ b
+    else b ^ a
+  }
 }
 
 case class TractorTcpFlow(timestamps: scala.collection.immutable.List[Double] = List[Double](),
-                          ipSrc: Array[Byte] = Array[Byte](), portSrc: Int = 0,
-                          ipDst: Array[Byte] = Array[Byte](), portDst: Int = 0,
+                          macScr: Array[Byte] = Array(), ipSrc: Array[Byte] = Array[Byte](), portSrc: Int = 0,
+                          macDst: Array[Byte] = Array(), ipDst: Array[Byte] = Array[Byte](), portDst: Int = 0,
                           length: scala.collection.immutable.List[Int] = List[Int](),
                           payloadLen: scala.collection.immutable.List[Int] = List[Int](),
                           tcpFlags: Array[Int] = new Array[Int](9), ackSet: Int = 0,
                           payloads: collection.immutable.TreeMap[Long, (Long, Int)] = new collection.immutable.TreeMap(),
-                          packetsWithSuck: Int = 0, packetsWithSuckAck: Int = 0, sackMax: Short = 0)
+                          packetsWithSack: Int = 0, packetsWithSackAck: Int = 0, sackMax: Short = 0)
   extends Serializable {
+
+  def isEmpty : Boolean ={
+    portSrc.equals(0)
+  }
+
+  def nonEmpty : Boolean ={
+    ! isEmpty
+  }
 
   def +(p: TractorTcpPacket): TractorTcpFlow = {
     TractorTcpFlow(
       this.timestamps :+ p.timestamp,
+      p.macScr,
       p.ipSrc,
       p.portSrc,
+      p.macDst,
       p.ipDst,
       p.portDst,
       this.length :+ p.length,
@@ -117,19 +159,21 @@ case class TractorTcpFlow(timestamps: scala.collection.immutable.List[Double] = 
         this.ackSet,
       this.payloads + (p.seq ->(p.payloadStart, p.payloadLen)),
       if (p.sackBlocksCount > 0)
-        this.packetsWithSuck + 1
-      else this.packetsWithSuck,
+        this.packetsWithSack + 1
+      else this.packetsWithSack,
       if (p.tcpFlags(3) > 0 && p.sackBlocksCount > 0)
-        this.packetsWithSuckAck + 1
-      else this.packetsWithSuckAck,
+        this.packetsWithSackAck + 1
+      else this.packetsWithSackAck,
       this.sackMax.max(p.sackBlocksCount))
   }
 
   def ++(f: TractorTcpFlow): TractorTcpFlow = {
     TractorTcpFlow(
       this.timestamps ++ f.timestamps,
+      f.macScr,
       f.ipSrc,
       f.portSrc,
+      f.macDst,
       f.ipDst,
       f.portDst,
       this.length ++ f.length,
@@ -168,6 +212,68 @@ case class TractorTcpFlow(timestamps: scala.collection.immutable.List[Double] = 
     data
   }
 
+  def readTlsServerName(file: File): String = {
+    val rafObj = new RandomAccessFile(file)(ByteConverterLittleEndian)
+    var serverName = "Unidentified"
+    breakable {
+      payloads.foreach((p: (Long, (Long, Int))) => {
+        rafObj.seek(p._2._1)
+        if (p._2._2 > 40) {
+          val data = rafObj.readByte(3)
+          val len1 = rafObj.readBInt16()
+          if (rafObj.readByte().equals(1.toByte)) {
+            //          if (data sameElements Array[Byte](0x16, 0x03, 0x00))
+            //            ssl = "SSL 3.0 "
+            if (data sameElements Array[Byte](0x16, 0x03, 0x01)) {
+              //ssl = "TLS 1.0"
+              rafObj.skipBytes(1)
+              val len2 = rafObj.readBInt16() // Length
+              //println(len1-len2)
+              if ((len1 - len2) == 4) {
+                if (rafObj.readByte(2) sameElements Array[Byte](0x03, 0x01)) {
+                  rafObj.skipBytes(32) //Random
+                  val sIdLen = rafObj.readByte().toShort //session
+                  rafObj.skipBytes(sIdLen)
+                  val ciph = rafObj.readBInt16()
+                  //println("ciph", ciph)
+                  rafObj.skipBytes(ciph)
+                  val comp = rafObj.readByte().toShort
+                  // println("comp", comp)
+                  rafObj.skipBytes(comp)
+                  rafObj.skipBytes(2) //ect len
+                  var extType = rafObj.readByte(2)
+                  while (!(extType sameElements Array[Byte](0x00,0x00))) {
+                    val bs = rafObj.readBInt16()
+                    //println("extSkip", bs)
+                    rafObj.skipBytes(bs)
+                    extType = rafObj.readByte(2)
+                  }
+                  //rafObj.skipBytes(2) //len ServName
+                  rafObj.skipBytes(2)
+                  val sln0 = rafObj.readBInt16()
+                  rafObj.skipBytes(1)
+                  val snl = rafObj.readBInt16()
+                  if ((sln0-snl) == 3) {
+                    //if (snl > 0 && snl < 100) {
+                    serverName = ByteString.fromArray(rafObj.readByte(snl)).utf8String
+                    break()
+                  }
+                  //}
+                }
+                //          else if (data sameElements Array[Byte](0x16, 0x03, 0x02))
+                //            ssl = "TLS 1.1"
+                //          else if (data sameElements Array[Byte](0x16, 0x03, 0x03))
+                //            ssl = "TLS 1.2"
+              }
+            }
+          }
+        }
+      })
+    }
+    rafObj.close
+    serverName
+  }
+
   override def toString: String = {
     s"$ipSrc:$portSrc -> $ipDst:$portDst, $timestamps $payloads $length $payloadLen %s".format(tcpFlags.toList)
   }
@@ -197,6 +303,14 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
     (this.serverFlow.timestamps ::: this.clientFlow.timestamps).min
   }
 
+  def getStopTime: Double = {
+    (this.serverFlow.timestamps ::: this.clientFlow.timestamps).max
+  }
+
+  def getDuration: Double = {
+    getStopTime - getStartTime
+  }
+
   def computeFeatures(): ListBuffer[Double] = {
     val features = scala.collection.mutable.ListBuffer[Double]()
     //1-21*† Number of bytes in Ethernet packet
@@ -220,14 +334,14 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
     features += clientFlow.ackSet
     features += serverFlow.ackSet
     //70-71 Number of packets with TCP optional SACK Blocks
-    features += clientFlow.packetsWithSuck
-    features += serverFlow.packetsWithSuck
+    features += clientFlow.packetsWithSack
+    features += serverFlow.packetsWithSack
     //72-73 Max number of SACK blocks in a single packet
     features += clientFlow.sackMax
     features += serverFlow.sackMax
     //74-75 Number of packets with ack flag set and SACK information
-    features += clientFlow.packetsWithSuckAck
-    features += serverFlow.packetsWithSuckAck
+    features += clientFlow.packetsWithSackAck
+    features += serverFlow.packetsWithSackAck
     //76-77 Number of packets with TCP payloads
     features += clientFlow.payloads.count((x: (Long, (Long, Int))) => x._2._2 > 0)
     features += serverFlow.payloads.count((x: (Long, (Long, Int))) => x._2._2 > 0)
@@ -253,7 +367,15 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
   }
 
   override def toString: String = {
-    clientFlow.toString
+    var flow = clientFlow
+    if(clientFlow.isEmpty){
+      flow = serverFlow
+    }
+    val m1 = flow.macScr
+    val m2 = flow.macDst
+    "%s (%s ms) [%02x:%02x:%02x:%02x:%02x:%02x] %s:%s <-> [%02x:%02x:%02x:%02x:%02x:%02x] %s:%s".format(new Timestamp((getStartTime/1000).toLong), getDuration/1000.toInt,
+      m1(0),m1(1),m1(2),m1(3), m1(4),m1(5) ,ipToString(flow.ipSrc),flow.portSrc,
+      m2(0),m2(1),m2(2),m2(3), m1(4),m1(5), ipToString(flow.ipDst), flow.portDst)
   }
 
   def getClientFirstPacketSignature(file: File): Array[Byte] = {
@@ -374,6 +496,10 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
   def getProtoByPort(ports : collection.mutable.Map[Int,String]): String = {
     val proto = ports(serverFlow.portSrc)
     proto
+  }
+
+  def getSslVersion(file: File) : String = {
+    clientFlow.readTlsServerName(file)
   }
 
   def getFlowStart: Double = {

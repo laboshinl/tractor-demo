@@ -1,6 +1,6 @@
 package ru.laboshinl.tractor
 
-import java.io.{File, ObjectInputStream}
+import java.io.{PrintWriter, File, ObjectInputStream}
 import java.net.InetAddress
 
 import akka.actor._
@@ -14,6 +14,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
+import better.files.{File => bFile}
 
 object ApplicationMain extends App {
   val usage =
@@ -47,6 +48,14 @@ object ApplicationMain extends App {
         sys.exit(1)
     }
   }
+  def getListOfFiles(dir: String):List[File] = {
+    val d = new File(dir)
+    if (d.exists && d.isDirectory) {
+      d.listFiles.filter(_.isFile).toList
+    } else {
+      List[File]()
+    }
+  }
 
   val localAddress = InetAddress.getLocalHost.getHostAddress
   val options = nextOption(Map(), argList)
@@ -58,7 +67,7 @@ object ApplicationMain extends App {
 
   implicit val timeout = Timeout(1000 seconds)
 
-  val file = new File(inputFile)
+  //val file = new File(inputFile)
 
   System.setProperty("akka.cluster.seed-nodes.0", seedNode)
   System.setProperty("akka.remote.netty.tcp.hostname", localAddress)
@@ -72,11 +81,11 @@ object ApplicationMain extends App {
         totalInstances = 1000, maxInstancesPerNode = nWorkers,
         allowLocalRoutees = true, useRole = None)).props(Props[SplitWithSmallerBlockActor]))
 
-////**************Second AS for testing**********************
-//    ActorSystem("ClusterSystem", ConfigFactory.parseString("akka.remote.netty.tcp { port = 2552, bind-port = 2552}").withFallback(ConfigFactory.load()))
-////**************Third  AS for testing**********************
-//    ActorSystem("ClusterSystem", ConfigFactory.parseString("akka.remote.netty.tcp { port = 2553, bind-port = 2553}").withFallback(ConfigFactory.load()))
-////*********************************************************
+    ////**************Second AS for testing**********************
+    //    ActorSystem("ClusterSystem", ConfigFactory.parseString("akka.remote.netty.tcp { port = 2552, bind-port = 2552}").withFallback(ConfigFactory.load()))
+    ////**************Third  AS for testing**********************
+    //    ActorSystem("ClusterSystem", ConfigFactory.parseString("akka.remote.netty.tcp { port = 2553, bind-port = 2553}").withFallback(ConfigFactory.load()))
+    ////*********************************************************
 
 
     val fis = getClass.getResourceAsStream("/ports.ser")
@@ -85,23 +94,45 @@ object ApplicationMain extends App {
     ois.close()
 
     scala.io.StdIn.readLine("Hit Return to start >")
-
     val waiter = system.actorOf(Props(new SplitWithDefaultBlockActor(workers, 64)))
 
-    val startTime = System.currentTimeMillis()
-    val result = akka.pattern.ask(waiter, file)
+    val f = bFile(inputFile)
+    f.entries.filter(_.contentType.get == "application/vnd.tcpdump.pcap").filter(_.size < 1024*1024*1024).filter(_.name.contains("big")).filter(f => bFile(inputFile + f.nameWithoutExtension + ".ndpi").exists).filter(f => ! bFile(inputFile + f.nameWithoutExtension + ".csv").exists).foreach(file => {
+      val startTime = System.currentTimeMillis()
+      println("Processing file %s".format(file.name))
+      val result = Await.result(akka.pattern.ask(waiter, file.toJava), 1000 second).asInstanceOf[BidirectionalFlows]
+      /*examples*/
+     // result.flows.filter(f => f._2.serverFlow.portSrc.equals(443)).foreach(f =>
+          println(result.getSslHostStatistic(file.toJava,ports))
+      //    println(result.getProtocolStatistics(ports))
+      //    println(result.getClientIpStatistics)
+      //    println(result.getServerIpStatistics)
+      //    println(result.getContentStatistic(file,ports))
+      //    println(result.getHostStatistic(file,ports))
+      println("Total Flows", result.flows.size)
+      result.flows.filter(f => f._2.getServerIp == "149.154.167.200").foreach(f => println(f._2.toString, f._1))
+      /*Machine Learning*/
+      //val lpi = SystemCmd.parseWithLpi(file.getAbsolutePath).filter(p => !Array[String]("HTTP","HTTPS", "HTTP_NonStandard", "Unknown_TCP", "Unsupported", "No_Payload", "Invalid", "Unknown_TCP").contains(p._2)) //detect proto with protoIdent
+      val lpi = Dpi.parseWithLpi(inputFile + file.nameWithoutExtension + ".ndpi")
+//      lpi.foreach( f =>
+//      println(f._1))
+//      println("===========================================")
+//      result.flows.foreach( f =>
+//      println(f._1)
+//      )
 
-    result.onComplete {
-      case Success(value) =>
-        println("number of flows", value.asInstanceOf[BidirectionalFlows].flows.size)
-        println("top talker", value.asInstanceOf[BidirectionalFlows].getClientIpStatistics.head)
+      val filtered = result.flows.filter(f => lpi.isDefinedAt(f._1))
+      println(filtered.size)
+      val writer = new PrintWriter(new File(inputFile + file.nameWithoutExtension + ".csv"))
+      filtered.foreach(f => {
+        writer.println("%s,%s".format(f._2.computeFeatures().map((f: Double) => new java.text.DecimalFormat("#.###").format(f)).mkString(","),lpi.get(f._1).get /*,f._2.getProtoByPort(ports)*/))
+      })
 
-      case Failure(e) =>
-        println("Failed", e)
-    }
-    Await.result(result, 1000 second)
+      writer.close()
 
-    val time = System.currentTimeMillis() - startTime
-    println("bs=%s, nW=%s, fileSize=%s MB, time=%s s, speed=%s MB/s".format(chunkSize, nWorkers, file.length() / 1024 / 1024, time, file.length() / 1024 / time))
+      val time = System.currentTimeMillis() - startTime
+      println("bs=%s, nW=%s, fileSize=%s MB, time=%s ms, speed=%s MB/s".format(chunkSize, nWorkers, file.size / 1024 / 1024, time, file.size / 1024 / time))
+    })
+    sys.exit(0)
   }
 }
