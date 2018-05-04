@@ -1,10 +1,14 @@
 package ru.laboshinl.tractor;
 
-import akka.util.HashCode;
 import org.apache.commons.lang3.ArrayUtils;
+import scala.collection.mutable.Map;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
 import java.math.BigInteger;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 
 public class Dpi {
@@ -57,10 +61,19 @@ public class Dpi {
     }
     public static void main(String[] args) {
         try {
-            parseWithLpi("/home/laboshinl/Downloads/remotepcaps/goodpcaps/holly.ndpi");
-        } catch (Exception e) {
+            //System.out.println(String.format("%s:%s<->%s:%s %s", ipToString(ipSrc), portSrc, ipToString(ipDst), portDst, computeHash(ipSrc, portSrc, ipDst, portDst, result)));
+            Map<Long, String> result = parseIscxi("/home/laboshinl/Testbed2.csv");
+            System.out.println(result.head().toString());
+
+        }catch ( Exception e){
             e.printStackTrace();
         }
+
+//        try {
+//            parseWithLpi("/home/laboshinl/Downloads/remotepcaps/goodpcaps/holly.ndpi");
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//        }
     }
 
     public static String ipToString(byte[] ip) {
@@ -71,6 +84,44 @@ public class Dpi {
             return "no.ip.address";
     }
 
+    public static byte[] stringToIp(String ip) throws UnknownHostException {
+        InetAddress addr = InetAddress.getByName(ip);
+        byte[] bytes = addr.getAddress();
+        return bytes;
+    }
+
+
+    public static scala.collection.mutable.Map<Long, String> parseIscxi(String file) throws  Exception {
+        //xml2csv --input Testbed.xml --output Testbed2.csv --tag TestbedSatJun12 --ignore totalSourceBytes totalDestinationBytes totalDestinationPackets totalSourcePackets sourcePayloadAsBase64 sourcePayloadAsUTF destinationPayloadAsUTF direction sourceTCPFlagsDescription destinationTCPFlagsDescription startDateTime stopDateTime destinationPayloadAsBase64 protocolName --noheader
+        //sed -i 's/"//g' Testbed2.csv
+        scala.collection.mutable.Map<Long,String> result = new  scala.collection.mutable.HashMap<>();
+
+        BufferedReader r = new BufferedReader(new InputStreamReader(new FileInputStream(file)));
+        String line;
+        while (true) {
+            line = r.readLine();
+            if (line == null) { break; }
+            String[] values = line.split(",");
+            try {
+                byte[] ipSrc = stringToIp(values[1]);
+                byte[] ipDst = stringToIp(values[3]);
+                int portSrc = Integer.parseInt(values[2]);//Short.toUnsignedInt(Short.reverseBytes(Short.parseShort(values[1])));
+                int portDst = Integer.parseInt(values[4]); //Short.toUnsignedInt(Short.reverseBytes(Short.parseShort(values[3])));
+
+//                if (result.isDefinedAt(computeHash2(ipSrc, portSrc, ipDst, portDst))) {
+//                    counter ++;
+//                    System.out.println(String.format("not unique id %s",computeHash2(ipSrc, portSrc, ipDst, portDst)));
+//                }
+                result.put(computeHash(ipSrc, portSrc, ipDst, portDst, result), values[0]);
+//                if(values[4].contains("Telegram"))
+//                    System.out.println(String.format("%s:%s<->%s:%s %s", ipToString(ipSrc), portSrc, ipToString(ipDst), portDst, computeHash(ipSrc, portSrc, ipDst, portDst, result)));
+            }
+            catch (Exception e) {
+                System.out.println(e);
+            }
+        }
+        return result;
+    }
 
     public static scala.collection.mutable.Map<Long, String> parseWithLpi(String file) throws Exception {
         scala.collection.mutable.Map<Long,String> result = new  scala.collection.mutable.HashMap<>();

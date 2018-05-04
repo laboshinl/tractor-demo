@@ -53,7 +53,7 @@ case class BidirectionalFlows(flows: scala.collection.immutable.Map[Long, Bidire
         a.head.getOrElse("Content-Type", "undefined").split(";").head
       else "undefined"
       }).mapValues(_.size).toSeq.sortBy(-_._2)
-  }
+  } 
 
   def getHostStatistic(file :File, ports : collection.mutable.Map[Int,String]) : Seq[(String,Int)] ={
     flows.filter(p => p._2.getProtoByPort(ports).equals("http")).groupBy(f => {
@@ -347,6 +347,7 @@ case class BidirectionalTcpFlow(clientFlow: TractorTcpFlow = TractorTcpFlow(), s
     features += serverFlow.payloads.count((x: (Long, (Long, Int))) => x._2._2 > 0)
     //78-79 Number of combined bytes within TCP payloads
     features += clientFlow.payloads.foldLeft(0)(_ + _._2._2)
+    features += serverFlow.payloads.foldLeft(0)(_ + _._2._2)
     //80-81 Number of packets with the TCP push flag set
     features += clientFlow.tcpFlags(4)
     features += serverFlow.tcpFlags(4)

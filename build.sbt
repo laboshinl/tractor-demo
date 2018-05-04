@@ -12,6 +12,12 @@ mainClass in assembly := Some("ru.laboshinl.tractor.ApplicationMain")
 
 assemblyJarName in assembly := "tractor.jar"
 
+assemblyMergeStrategy in assembly := {
+   case PathList("reference.conf") => MergeStrategy.concat
+   case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+   case x => MergeStrategy.first
+}
+
 test in assembly := {}
 
 libraryDependencies ++= Seq(
@@ -21,18 +27,19 @@ libraryDependencies ++= Seq(
   "com.twitter" % "chill-akka_2.11" % "0.8.1",
   "com.github.pathikrit" %% "better-files" % "2.16.0",
   "org.apache.commons" % "commons-lang3" % "3.5",
-"edu.berkeley.compbio"% "jlibsvm" %"0.911",
+  "com.github.tototoshi" %% "scala-csv" % "1.3.3",
+//"edu.berkeley.compbio"% "jlibsvm" %"0.911",
   "nz.ac.waikato.cms.weka" % "weka-stable" % "3.8.0"
 )
 
-javaCppPresetLibs ++= Seq("tensorflow" -> "0.9.0")
+//javaCppPresetLibs ++= Seq("tensorflow" -> "0.9.0")
 
-resolvers += "dev.davidsoergel.com releases" at "http://dev.davidsoergel.com/nexus/content/repositories/releases"
+//resolvers += "dev.davidsoergel.com releases" at "http://dev.davidsoergel.com/nexus/content/repositories/releases"
 
-resolvers += "dev.davidsoergel.com third" at "http://davidsoergel.com/nexus/content/repositories/thirdparty"
+//resolvers += "dev.davidsoergel.com third" at "http://davidsoergel.com/nexus/content/repositories/thirdparty"
 
-resolvers += Resolver.sonatypeRepo("snapshots")
+//resolvers += Resolver.sonatypeRepo("snapshots")
 
 fork in run := true
 
-classpathTypes += "maven-plugin"
+//classpathTypes += "maven-plugin"
